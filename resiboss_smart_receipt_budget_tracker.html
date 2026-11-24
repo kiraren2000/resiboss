@@ -1,0 +1,3429 @@
+<!DOCTYPE html>
+<html lang="en" class="light">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <meta name="theme-color" content="#0f172a" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="resiBoss" />
+  <title>resiBoss — Smart Receipt & Budget Tracker</title>
+
+  <!-- Inline PWA App Icon & Favicon -->
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='16' fill='%230f172a'/%3E%3Cpath d='M20 16h24v32l-4-3-4 3-4-3-4 3-4-3-4 3V16z' fill='%2310b981'/%3E%3Cpath d='M25 24h14M25 31h14M25 38h9' stroke='%230f172a' stroke-width='3' stroke-linecap='round'/%3E%3C/svg%3E" />
+  <link rel="apple-touch-icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='16' fill='%230f172a'/%3E%3Cpath d='M20 16h24v32l-4-3-4 3-4-3-4 3-4-3-4 3V16z' fill='%2310b981'/%3E%3Cpath d='M25 24h14M25 31h14M25 38h9' stroke='%230f172a' stroke-width='3' stroke-linecap='round'/%3E%3C/svg%3E" />
+
+  <script src="https://cdn.tailwindcss.com/3.4.17"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['Inter', 'system-ui', '-apple-system', 'sans-serif'],
+            mono: ['JetBrains Mono', 'ui-monospace', 'SFMono-Regular', 'monospace']
+          }
+        }
+      }
+    };
+  </script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;600;700&display=swap" rel="stylesheet">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+  <script src="https://unpkg.com/lucide@0.460.0/dist/umd/lucide.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
+
+  <style>
+    body {
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background-color: #f8fafc;
+      color: #0f172a;
+      -webkit-font-smoothing: antialiased;
+    }
+    .dark body {
+      background-color: #090d16;
+      color: #f8fafc;
+    }
+    .soft-card {
+      box-shadow: 0 4px 20px -4px rgba(15, 23, 42, 0.05), 0 1px 3px rgba(15, 23, 42, 0.03);
+    }
+    .dark .soft-card {
+      box-shadow: 0 8px 28px -6px rgba(0, 0, 0, 0.45);
+    }
+    .receipt-paper {
+      background-image: radial-gradient(#cbd5e1 1px, transparent 1px);
+      background-size: 12px 12px;
+    }
+    .dark .receipt-paper {
+      background-image: radial-gradient(#334155 1px, transparent 1px);
+    }
+    /* Hide scrollbar cleanly for horizontal timeframe pills */
+    .no-scrollbar::-webkit-scrollbar { display: none; }
+    .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+
+    @keyframes scanline {
+      0% { top: 4%; opacity: 0.9; }
+      50% { top: 92%; opacity: 1; }
+      100% { top: 4%; opacity: 0.9; }
+    }
+    .scanner-beam {
+      position: absolute;
+      left: 0;
+      right: 0;
+      height: 3px;
+      background: linear-gradient(90deg, transparent, #10b981, #3b82f6, #10b981, transparent);
+      box-shadow: 0 0 14px 3px rgba(16, 185, 129, 0.65);
+      animation: scanline 1.5s ease-in-out infinite;
+      pointer-events: none;
+    }
+    @media print {
+      body * { visibility: hidden; }
+      #printable-voucher, #printable-voucher * { visibility: visible; }
+      #printable-voucher {
+        position: absolute;
+        left: 0;
+        top: 0;
+        width: 100%;
+        box-shadow: none !important;
+        border: 1px solid #000 !important;
+        background: #fff !important;
+        color: #000 !important;
+      }
+      .no-print { display: none !important; }
+    }
+  </style>
+</head>
+<body class="bg-slate-50 text-slate-900 dark:bg-slate-950 dark:text-slate-100 min-h-screen pb-24 sm:pb-10 transition-colors duration-200">
+
+  <!-- Toast Notification Stack -->
+  <div id="toast-container" class="fixed top-16 right-4 z-50 flex flex-col gap-2 max-w-xs w-full pointer-events-none"></div>
+
+  <!-- Minimalist Sticky Top Bar -->
+  <header class="sticky top-0 z-30 bg-white/90 dark:bg-slate-900/90 backdrop-blur-md border-b border-slate-200/80 dark:border-slate-800 no-print">
+    <div class="max-w-5xl mx-auto px-4 sm:px-6 h-14 flex items-center justify-between gap-3">
+      <!-- Brand + Live Auto-Save Status -->
+      <div class="flex items-center gap-2.5">
+        <div class="w-9 h-9 rounded-xl bg-slate-900 dark:bg-emerald-500 flex items-center justify-center text-white dark:text-slate-950 shadow-sm">
+          <i data-lucide="receipt" class="w-4 h-4 stroke-[2.5]"></i>
+        </div>
+        <span class="font-extrabold text-lg tracking-tight text-slate-900 dark:text-white">resi<span class="text-emerald-600 dark:text-emerald-400">Boss</span></span>
+        <span id="save-status-pill" class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold bg-emerald-50 text-emerald-700 dark:bg-emerald-950/80 dark:text-emerald-300 border border-emerald-200/70 dark:border-emerald-800/60" title="Automatically saved to this device">
+          <span class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
+          <span>Saved</span>
+        </span>
+      </div>
+
+      <!-- Desktop Navigation Pills -->
+      <nav class="hidden sm:flex items-center gap-1 bg-slate-100 dark:bg-slate-800/90 p-1 rounded-xl" aria-label="Main Navigation">
+        <button type="button" data-tab="home" class="nav-tab-btn px-3.5 py-1.5 rounded-lg text-xs font-bold bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-sm transition flex items-center gap-1.5">
+          <i data-lucide="home" class="w-3.5 h-3.5"></i>
+          <span>Home</span>
+        </button>
+        <button type="button" data-tab="history" class="nav-tab-btn px-3.5 py-1.5 rounded-lg text-xs font-semibold text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white transition flex items-center gap-1.5">
+          <i data-lucide="list" class="w-3.5 h-3.5"></i>
+          <span>History</span>
+        </button>
+        <button type="button" data-tab="liquidate" class="nav-tab-btn px-3.5 py-1.5 rounded-lg text-xs font-semibold text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white transition flex items-center gap-1.5">
+          <i data-lucide="file-check" class="w-3.5 h-3.5"></i>
+          <span>Liquidate</span>
+        </button>
+        <button type="button" data-tab="ambagan" class="nav-tab-btn px-3.5 py-1.5 rounded-lg text-xs font-semibold text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white transition flex items-center gap-1.5">
+          <i data-lucide="users" class="w-3.5 h-3.5"></i>
+          <span>Ambagan</span>
+        </button>
+      </nav>
+
+      <!-- Right Controls: Data/Backup & Theme -->
+      <div class="flex items-center gap-1.5">
+        <button id="btn-open-data-modal" type="button" class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 transition" title="Start Fresh, Export or Restore Backup">
+          <i data-lucide="database" class="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400"></i>
+          <span>Data</span>
+        </button>
+        <button id="btn-theme-toggle" type="button" class="p-2 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 transition" title="Toggle Dark Mode">
+          <i data-lucide="moon" id="theme-icon-moon" class="w-4 h-4"></i>
+          <i data-lucide="sun" id="theme-icon-sun" class="w-4 h-4 hidden"></i>
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <!-- Sample Data Notice Banner -->
+  <div id="demo-banner" class="hidden max-w-5xl mx-auto px-4 sm:px-6 pt-4 no-print">
+    <div class="rounded-2xl bg-amber-50 dark:bg-amber-950/40 border border-amber-200/80 dark:border-amber-800/60 px-4 py-2.5 flex flex-wrap items-center justify-between gap-2 text-xs">
+      <div class="flex items-center gap-2 text-amber-900 dark:text-amber-200">
+        <i data-lucide="sparkles" class="w-4 h-4 text-amber-600 shrink-0"></i>
+        <span><strong>Multi-week sample preview:</strong> Ready to track your own budget?</span>
+      </div>
+      <div class="flex items-center gap-2">
+        <button type="button" id="btn-banner-start-fresh" class="px-3 py-1 rounded-lg bg-amber-600 hover:bg-amber-700 text-white font-bold transition">
+          Clear Sample &amp; Start at ₱0
+        </button>
+        <button type="button" id="btn-banner-dismiss" class="p-1 text-amber-700 dark:text-amber-300 hover:opacity-75" title="Dismiss">
+          <i data-lucide="x" class="w-3.5 h-3.5"></i>
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Main Content Container -->
+  <main class="max-w-5xl mx-auto px-4 sm:px-6 py-5 space-y-5">
+
+    <!-- ========================================== -->
+    <!-- TAB 1: HOME (OVERVIEW, MULTI-WEEK & TOOLS) -->
+    <!-- ========================================== -->
+    <section id="tab-home" class="tab-panel space-y-5">
+
+      <!-- Top Summary & Fixed-Center Donut Breakdown -->
+      <div class="grid grid-cols-1 lg:grid-cols-12 gap-5 items-stretch">
+
+        <!-- Left Card: Balance, Daily Safe-to-Spend & Savings Goal -->
+        <div class="lg:col-span-5 bg-white dark:bg-slate-900 rounded-3xl border border-slate-200/80 dark:border-slate-800 p-5 sm:p-6 soft-card flex flex-col justify-between space-y-5">
+          <div class="flex items-center justify-between gap-2">
+            <div>
+              <span class="text-xs font-semibold text-slate-400 uppercase tracking-wider">Remaining Balance</span>
+              <div id="home-balance-val" class="text-3xl font-extrabold font-mono text-slate-900 dark:text-white mt-0.5">₱0.00</div>
+            </div>
+            <button type="button" id="btn-home-add-budget" class="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-2xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold shadow-sm transition shrink-0">
+              <i data-lucide="plus" class="w-4 h-4"></i>
+              <span>Add Budget</span>
+            </button>
+          </div>
+
+          <!-- Progress Bar -->
+          <div class="space-y-1.5">
+            <div class="flex justify-between text-xs font-medium text-slate-500 dark:text-slate-400">
+              <span id="home-spent-label">Spent: ₱0.00</span>
+              <span id="home-budget-label">Budget: ₱0.00</span>
+            </div>
+            <div class="w-full h-2.5 bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden">
+              <div id="home-progress-bar" class="h-full bg-emerald-500 rounded-full transition-all duration-300" style="width: 100%"></div>
+            </div>
+          </div>
+
+          <!-- Safe Spend (with Daily Allowance) & Savings Goal -->
+          <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-1 xl:grid-cols-2 gap-3 pt-1">
+            <div class="p-3.5 rounded-2xl bg-emerald-50/70 dark:bg-emerald-950/40 border border-emerald-200/70 dark:border-emerald-800/50 flex flex-col justify-between">
+              <div>
+                <span class="text-[11px] font-semibold text-emerald-700 dark:text-emerald-300 block">Safe to Spend</span>
+                <div id="home-safe-spend" class="text-lg font-extrabold font-mono text-emerald-700 dark:text-emerald-400 mt-0.5">₱0.00</div>
+              </div>
+              <div id="home-daily-allowance" class="text-[11px] font-semibold text-emerald-800 dark:text-emerald-300 mt-1.5 pt-1.5 border-t border-emerald-200/60 dark:border-emerald-800/60">
+                ₱0.00/day • 7 days left
+              </div>
+            </div>
+
+            <div class="p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200/80 dark:border-slate-700/70 flex flex-col justify-between">
+              <div class="flex items-center justify-between">
+                <span class="text-[11px] font-semibold text-slate-500 dark:text-slate-400">Savings Goal</span>
+                <span id="home-savings-badge" class="text-[10px] font-bold text-emerald-600 dark:text-emerald-400">On Track</span>
+              </div>
+              <div class="flex items-center gap-1.5 mt-1.5">
+                <span class="text-xs font-mono font-bold text-slate-400">₱</span>
+                <input id="input-savings-goal" type="number" step="50" min="0" value="500" aria-label="Savings Goal" class="w-full bg-transparent border-b border-slate-300 dark:border-slate-600 focus:border-emerald-500 text-base font-mono font-extrabold text-slate-900 dark:text-white outline-none py-0.5" />
+                <button type="button" id="btn-save-goal" class="px-2.5 py-1 rounded-lg bg-slate-900 dark:bg-emerald-600 text-white text-[11px] font-bold hover:opacity-90 transition" title="Save Goal">Save</button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Right Card: Spending Breakdown (Fixed Square Donut + Custom HTML Legend + Category Caps) -->
+        <div class="lg:col-span-7 bg-white dark:bg-slate-900 rounded-3xl border border-slate-200/80 dark:border-slate-800 p-5 sm:p-6 soft-card flex flex-col justify-between space-y-4">
+          <div class="flex flex-wrap items-center justify-between gap-2">
+            <div class="flex items-center gap-2">
+              <h2 class="text-sm font-extrabold text-slate-900 dark:text-white">Spending Breakdown</h2>
+              <button type="button" id="btn-open-limits-modal" class="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg text-[11px] font-bold bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 transition" title="Set Weekly Category Spending Limits">
+                <i data-lucide="gauge" class="w-3 h-3 text-amber-500"></i>
+                <span>Caps</span>
+              </button>
+            </div>
+
+            <!-- Multi-Week & Period Filter Pills -->
+            <div class="flex items-center gap-1 overflow-x-auto no-scrollbar bg-slate-100 dark:bg-slate-800 p-1 rounded-xl text-[11px]">
+              <button type="button" data-timeframe="this_week" class="timeframe-btn px-2.5 py-1 rounded-lg font-bold bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-sm whitespace-nowrap transition">This Week</button>
+              <button type="button" data-timeframe="last_week" class="timeframe-btn px-2.5 py-1 rounded-lg font-semibold text-slate-500 dark:text-slate-400 whitespace-nowrap transition">Last Week</button>
+              <button type="button" data-timeframe="two_weeks_ago" class="timeframe-btn px-2.5 py-1 rounded-lg font-semibold text-slate-500 dark:text-slate-400 whitespace-nowrap transition">2 Wks Ago</button>
+              <button type="button" data-timeframe="past_2_weeks" class="timeframe-btn px-2.5 py-1 rounded-lg font-semibold text-slate-500 dark:text-slate-400 whitespace-nowrap transition">Past 2 Wks</button>
+              <button type="button" data-timeframe="month" class="timeframe-btn px-2.5 py-1 rounded-lg font-semibold text-slate-500 dark:text-slate-400 whitespace-nowrap transition">Month</button>
+              <button type="button" data-timeframe="all" class="timeframe-btn px-2.5 py-1 rounded-lg font-semibold text-slate-500 dark:text-slate-400 whitespace-nowrap transition">All</button>
+            </div>
+          </div>
+
+          <!-- Dedicated Square Donut Wrapper + External HTML Legend -->
+          <div class="flex flex-col sm:flex-row items-center gap-5 my-auto">
+            <div class="relative w-44 h-44 shrink-0 flex items-center justify-center">
+              <canvas id="chart-expenses"></canvas>
+              <div class="absolute inset-0 flex flex-col items-center justify-center pointer-events-none px-5 text-center">
+                <span class="text-[10px] font-semibold uppercase tracking-wider text-slate-400">Total Out</span>
+                <span id="ring-center-total" class="text-base font-extrabold font-mono text-slate-900 dark:text-white leading-tight mt-0.5">₱0.00</span>
+                <span id="ring-center-sub" class="text-[10px] font-medium text-slate-400 mt-0.5">0 items</span>
+              </div>
+            </div>
+
+            <!-- Interactive HTML Category Legend with Weekly Cap Progress -->
+            <div id="expense-legend-list" class="flex-1 w-full space-y-2.5 max-h-48 overflow-y-auto pr-1"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Clean Action Bar: Scan Receipt OR Quick Type -->
+      <div class="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200/80 dark:border-slate-800 p-4 sm:p-5 soft-card space-y-3">
+        <div class="grid grid-cols-1 md:grid-cols-12 gap-3 items-center">
+          <div id="home-dropzone" class="md:col-span-4">
+            <label for="home-receipt-file" class="cursor-pointer w-full py-3 px-4 rounded-2xl bg-slate-900 hover:bg-slate-800 dark:bg-blue-600 dark:hover:bg-blue-500 text-white font-bold text-xs sm:text-sm flex items-center justify-center gap-2 shadow-sm transition">
+              <i data-lucide="camera" class="w-4 h-4"></i>
+              <span>Scan Receipt Photo</span>
+              <input id="home-receipt-file" type="file" accept="image/*" class="hidden" />
+            </label>
+          </div>
+
+          <div class="md:col-span-8 flex gap-2">
+            <input id="home-quick-input" type="text" placeholder="Quick add: e.g. Lunch 85, Tricycle 35..." class="flex-1 px-4 py-3 rounded-2xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/80 text-xs sm:text-sm outline-none focus:ring-2 focus:ring-emerald-500" />
+            <button type="button" id="btn-home-quick-add" class="px-5 py-3 rounded-2xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs sm:text-sm whitespace-nowrap shadow-sm transition">
+              Add
+            </button>
+          </div>
+        </div>
+
+        <div class="flex flex-wrap items-center justify-between gap-2 pt-1 text-xs text-slate-500 dark:text-slate-400">
+          <div class="flex items-center gap-2">
+            <span>Try sample scan:</span>
+            <button type="button" data-demo-scan="nbs" class="demo-scan-link font-semibold text-blue-600 dark:text-blue-400 hover:underline">National Book Store</button>
+            <span>•</span>
+            <button type="button" data-demo-scan="gcash" class="demo-scan-link font-semibold text-blue-600 dark:text-blue-400 hover:underline">GCash Slip</button>
+          </div>
+          <button type="button" id="btn-open-manual-modal" class="font-semibold text-slate-700 dark:text-slate-300 hover:text-emerald-600 transition flex items-center gap-1">
+            <i data-lucide="sliders-horizontal" class="w-3.5 h-3.5"></i>
+            <span>Detailed Entry</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- Multi-Week Expenses Breakdown & 2-Week Comparison Card -->
+      <div class="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200/80 dark:border-slate-800 p-5 sm:p-6 soft-card space-y-4">
+        <div class="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <h2 class="text-base font-extrabold text-slate-900 dark:text-white">Weekly Expenses &amp; 2-Week Comparison</h2>
+            <p class="text-xs text-slate-400 mt-0.5">Tap any week to inspect its itemized receipts and expenses</p>
+          </div>
+
+          <!-- Past 2 Weeks Summary Pill -->
+          <div class="flex items-center gap-3 px-3.5 py-2 rounded-2xl bg-slate-50 dark:bg-slate-800/80 border border-slate-200/80 dark:border-slate-700">
+            <div>
+              <span class="text-[10px] font-bold uppercase tracking-wider text-slate-400 block">Past 2 Weeks (14d)</span>
+              <span id="past-2w-total" class="text-sm font-extrabold font-mono text-slate-900 dark:text-white">₱0.00</span>
+            </div>
+            <div class="h-7 w-px bg-slate-200 dark:bg-slate-700"></div>
+            <div>
+              <span class="text-[10px] font-bold uppercase tracking-wider text-slate-400 block">Weekly Avg</span>
+              <span id="past-2w-avg" class="text-sm font-extrabold font-mono text-emerald-600 dark:text-emerald-400">₱0.00/wk</span>
+            </div>
+          </div>
+        </div>
+
+        <div id="weekly-breakdown-list" class="space-y-2.5"></div>
+      </div>
+
+      <!-- Recurring Expenses & Load/Bill Reminders Card -->
+      <div class="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200/80 dark:border-slate-800 p-5 sm:p-6 soft-card space-y-4">
+        <div class="flex items-center justify-between gap-2">
+          <div class="flex items-center gap-2">
+            <h2 class="text-base font-extrabold text-slate-900 dark:text-white">Recurring &amp; Bills</h2>
+            <span id="recurring-count-badge" class="text-xs font-bold px-2 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300">0</span>
+          </div>
+          <button type="button" id="btn-open-recurring-modal" class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 text-xs font-bold transition">
+            <i data-lucide="plus" class="w-3.5 h-3.5 text-emerald-600"></i>
+            <span>Add Recurring</span>
+          </button>
+        </div>
+
+        <div id="recurring-list" class="grid grid-cols-1 md:grid-cols-3 gap-3"></div>
+      </div>
+
+      <!-- Recent Activity Feed (with Edit & Receipt Proof Buttons) -->
+      <div class="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200/80 dark:border-slate-800 p-5 sm:p-6 soft-card space-y-4">
+        <div class="flex flex-wrap items-center justify-between gap-2">
+          <div class="flex items-center gap-2">
+            <h2 class="text-base font-extrabold text-slate-900 dark:text-white">Recent Activity</h2>
+            <span id="home-activity-count" class="text-xs font-bold px-2 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300">0</span>
+          </div>
+
+          <div class="inline-flex rounded-xl p-0.5 bg-slate-100 dark:bg-slate-800 text-xs">
+            <button type="button" data-feed-filter="all" class="feed-filter-btn px-3 py-1 rounded-lg font-bold bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-sm transition">All</button>
+            <button type="button" data-feed-filter="expense" class="feed-filter-btn px-3 py-1 rounded-lg font-semibold text-slate-500 dark:text-slate-400 transition">Expenses</button>
+            <button type="button" data-feed-filter="revenue" class="feed-filter-btn px-3 py-1 rounded-lg font-semibold text-slate-500 dark:text-slate-400 transition">Budget In</button>
+          </div>
+        </div>
+
+        <div id="home-activity-list" class="divide-y divide-slate-100 dark:divide-slate-800"></div>
+      </div>
+    </section>
+
+    <!-- ========================================== -->
+    <!-- TAB 2: HISTORY (SEARCH, EDIT & PROOF VIEW) -->
+    <!-- ========================================== -->
+    <section id="tab-history" class="tab-panel hidden space-y-4">
+      <div class="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200/80 dark:border-slate-800 p-5 soft-card space-y-4">
+        <div class="flex flex-wrap items-center justify-between gap-3">
+          <h2 class="text-lg font-extrabold text-slate-900 dark:text-white">Transaction History</h2>
+          <div class="flex items-center gap-2">
+            <div class="inline-flex rounded-xl p-0.5 bg-slate-100 dark:bg-slate-800 text-xs">
+              <button type="button" id="btn-hist-timeline" class="px-3 py-1.5 rounded-lg font-bold bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-sm transition">Timeline</button>
+              <button type="button" id="btn-hist-grouped" class="px-3 py-1.5 rounded-lg font-semibold text-slate-500 dark:text-slate-400 transition">By Category</button>
+            </div>
+            <button type="button" id="btn-hist-export-csv" class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-50 hover:bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 text-xs font-bold transition">
+              <i data-lucide="download" class="w-3.5 h-3.5"></i>
+              <span>CSV</span>
+            </button>
+          </div>
+        </div>
+
+        <div class="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+          <input id="hist-search" type="text" placeholder="Search merchant, notes, ref..." class="w-full px-3.5 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-xs outline-none focus:ring-2 focus:ring-emerald-500" />
+          <select id="hist-type" class="w-full px-3.5 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-xs">
+            <option value="all">All Transactions</option>
+            <option value="expense">Expenses Only (-)</option>
+            <option value="revenue">Budget Inflows (+)</option>
+          </select>
+          <select id="hist-proof" class="w-full px-3.5 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-xs">
+            <option value="all">All Receipt Types</option>
+            <option value="receipted">With Receipt / E-Wallet</option>
+            <option value="unreceipted">No Receipt (Walang Resibo)</option>
+          </select>
+        </div>
+      </div>
+
+      <div id="hist-timeline-view" class="space-y-3"></div>
+      <div id="hist-grouped-view" class="hidden grid grid-cols-1 md:grid-cols-2 gap-4"></div>
+    </section>
+
+    <!-- ========================================== -->
+    <!-- TAB 3: LIQUIDATE (EMAIL & VOUCHER)         -->
+    <!-- ========================================== -->
+    <section id="tab-liquidate" class="tab-panel hidden space-y-5">
+      <div class="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200/80 dark:border-slate-800 p-5 soft-card space-y-4 no-print">
+        <div class="flex flex-wrap items-center justify-between gap-2">
+          <h2 class="text-lg font-extrabold text-slate-900 dark:text-white">Liquidation Report</h2>
+          <div class="flex gap-2">
+            <button type="button" id="btn-liq-work" class="px-3 py-1 rounded-xl text-xs font-bold bg-blue-50 text-blue-700 dark:bg-blue-950 dark:text-blue-300">Work / School</button>
+            <button type="button" id="btn-liq-all" class="px-3 py-1 rounded-xl text-xs font-bold bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300">Select All</button>
+          </div>
+        </div>
+
+        <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+          <div>
+            <label class="block text-[11px] font-semibold text-slate-500 mb-1" for="liq-sender">Prepared By</label>
+            <input id="liq-sender" type="text" value="Alex Santos" class="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-xs" />
+          </div>
+          <div>
+            <label class="block text-[11px] font-semibold text-slate-500 mb-1" for="liq-recipient">Recipient / Approver</label>
+            <input id="liq-recipient" type="text" value="Dr. Maria Elena Reyes, Dean" class="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-xs" />
+          </div>
+          <div>
+            <label class="block text-[11px] font-semibold text-slate-500 mb-1" for="liq-advance">Cash Advance (₱)</label>
+            <input id="liq-advance" type="number" step="0.01" value="1500" class="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-xs font-mono font-bold" />
+          </div>
+        </div>
+
+        <div id="liq-checklist" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2 max-h-40 overflow-y-auto pt-1"></div>
+      </div>
+
+      <div class="grid grid-cols-1 lg:grid-cols-12 gap-5">
+        <div class="lg:col-span-5 bg-white dark:bg-slate-900 rounded-3xl border border-slate-200/80 dark:border-slate-800 p-5 soft-card flex flex-col justify-between no-print">
+          <div>
+            <div class="flex items-center justify-between mb-3">
+              <h3 class="text-sm font-bold text-slate-900 dark:text-white">Email Draft</h3>
+              <button type="button" id="btn-copy-email" class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold bg-emerald-600 hover:bg-emerald-700 text-white transition">
+                <i data-lucide="copy" class="w-3.5 h-3.5"></i>
+                <span>Copy Text</span>
+              </button>
+            </div>
+            <pre id="liq-email-output" class="whitespace-pre-wrap font-sans text-xs leading-relaxed bg-slate-50 dark:bg-slate-800/70 p-4 rounded-2xl border border-slate-200/80 dark:border-slate-700 text-slate-700 dark:text-slate-200 max-h-[420px] overflow-y-auto"></pre>
+          </div>
+        </div>
+
+        <div id="printable-voucher" class="lg:col-span-7 bg-white dark:bg-slate-900 rounded-3xl border border-slate-200/80 dark:border-slate-800 p-5 soft-card flex flex-col justify-between">
+          <div>
+            <div class="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-3 mb-3">
+              <div>
+                <h3 class="text-sm font-extrabold text-slate-900 dark:text-white">Liquidation Voucher</h3>
+                <p class="text-[11px] text-slate-400">Itemized expense summary with proof links</p>
+              </div>
+              <button type="button" id="btn-print-voucher" class="no-print inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold bg-slate-900 dark:bg-slate-700 text-white transition">
+                <i data-lucide="printer" class="w-3.5 h-3.5"></i>
+                <span>Print / PDF</span>
+              </button>
+            </div>
+
+            <div class="overflow-x-auto">
+              <table class="w-full text-left border-collapse text-xs">
+                <thead>
+                  <tr class="border-b border-slate-200 dark:border-slate-700 text-slate-500">
+                    <th class="py-2 pr-2">Date</th>
+                    <th class="py-2 px-2">Ref</th>
+                    <th class="py-2 px-2">Particulars</th>
+                    <th class="py-2 px-2 no-print">Proof</th>
+                    <th class="py-2 pl-2 text-right">Amount</th>
+                  </tr>
+                </thead>
+                <tbody id="liq-voucher-tbody" class="divide-y divide-slate-100 dark:divide-slate-800"></tbody>
+                <tfoot id="liq-voucher-tfoot" class="border-t-2 border-slate-200 dark:border-slate-700 font-semibold"></tfoot>
+              </table>
+            </div>
+
+            <div id="liq-cert-note" class="mt-4 p-3 rounded-2xl bg-amber-50 dark:bg-amber-950/40 text-[11px] text-amber-900 dark:text-amber-200"></div>
+
+            <div class="grid grid-cols-2 gap-6 mt-6 pt-4 border-t border-slate-100 dark:border-slate-800 text-xs">
+              <div>
+                <div class="text-slate-400 text-[11px]">Prepared By:</div>
+                <div id="sig-prepared" class="font-bold text-slate-900 dark:text-white mt-5 border-t border-slate-300 dark:border-slate-700 pt-1">Alex Santos</div>
+              </div>
+              <div>
+                <div class="text-slate-400 text-[11px]">Approved By:</div>
+                <div id="sig-approved" class="font-bold text-slate-900 dark:text-white mt-5 border-t border-slate-300 dark:border-slate-700 pt-1">Dr. Maria Elena Reyes</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ========================================== -->
+    <!-- TAB 4: AMBAGAN (GROUP BILL SPLITTER)       -->
+    <!-- ========================================== -->
+    <section id="tab-ambagan" class="tab-panel hidden space-y-5">
+      <div class="grid grid-cols-1 lg:grid-cols-12 gap-5">
+        <div class="lg:col-span-5 bg-white dark:bg-slate-900 rounded-3xl border border-slate-200/80 dark:border-slate-800 p-5 soft-card space-y-4">
+          <h2 class="text-lg font-extrabold text-slate-900 dark:text-white">Ambagan Split</h2>
+
+          <div class="space-y-3">
+            <div>
+              <label class="block text-[11px] font-semibold text-slate-500 mb-1" for="ambagan-pick-expense">Pick from Logged Expenses (Optional)</label>
+              <select id="ambagan-pick-expense" class="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-xs"></select>
+            </div>
+
+            <div class="grid grid-cols-2 gap-2.5">
+              <div>
+                <label class="block text-[11px] font-semibold text-slate-500 mb-1" for="ambagan-title">Bill Name</label>
+                <input id="ambagan-title" type="text" value="Thesis Printing" class="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-xs" />
+              </div>
+              <div>
+                <label class="block text-[11px] font-semibold text-slate-500 mb-1" for="ambagan-total">Total Bill (₱)</label>
+                <input id="ambagan-total" type="number" step="0.01" min="1" value="600" class="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-sm font-mono font-bold" />
+              </div>
+            </div>
+
+            <div class="flex gap-2">
+              <input id="ambagan-new-name" type="text" placeholder="Add person..." class="flex-1 px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-xs" />
+              <button type="button" id="btn-ambagan-add" class="px-4 py-2 rounded-xl bg-slate-900 dark:bg-emerald-600 text-white text-xs font-bold">Add</button>
+            </div>
+          </div>
+
+          <div class="p-4 rounded-2xl bg-emerald-50/80 dark:bg-emerald-950/40 border border-emerald-200/70 dark:border-emerald-800/50 flex items-center justify-between">
+            <div>
+              <span class="text-[11px] font-semibold text-emerald-700 dark:text-emerald-300 block">Share Per Person</span>
+              <span id="ambagan-share-val" class="text-2xl font-extrabold font-mono text-emerald-800 dark:text-white">₱150.00</span>
+            </div>
+            <button type="button" id="btn-ambagan-copy" class="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-white dark:bg-slate-800 text-slate-800 dark:text-white border border-slate-200 dark:border-slate-700 text-xs font-bold shadow-sm">
+              <i data-lucide="copy" class="w-3.5 h-3.5"></i>
+              <span>Copy Reminder</span>
+            </button>
+          </div>
+        </div>
+
+        <div class="lg:col-span-7 bg-white dark:bg-slate-900 rounded-3xl border border-slate-200/80 dark:border-slate-800 p-5 soft-card space-y-3">
+          <div class="flex items-center justify-between">
+            <h3 class="text-sm font-bold text-slate-900 dark:text-white">Group Members</h3>
+            <span id="ambagan-paid-badge" class="text-xs font-bold px-2.5 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300">2 of 4 Paid</span>
+          </div>
+          <div id="ambagan-list" class="space-y-2"></div>
+        </div>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- Mobile Bottom Navigation Bar -->
+  <nav class="sm:hidden fixed bottom-0 inset-x-0 z-30 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md border-t border-slate-200 dark:border-slate-800 grid grid-cols-4 py-1.5 no-print" aria-label="Mobile Navigation">
+    <button type="button" data-tab="home" class="mobile-nav-btn flex flex-col items-center justify-center py-1 text-emerald-600 dark:text-emerald-400 font-bold text-[11px]">
+      <i data-lucide="home" class="w-5 h-5 mb-0.5"></i>
+      <span>Home</span>
+    </button>
+    <button type="button" data-tab="history" class="mobile-nav-btn flex flex-col items-center justify-center py-1 text-slate-500 dark:text-slate-400 font-medium text-[11px]">
+      <i data-lucide="list" class="w-5 h-5 mb-0.5"></i>
+      <span>History</span>
+    </button>
+    <button type="button" data-tab="liquidate" class="mobile-nav-btn flex flex-col items-center justify-center py-1 text-slate-500 dark:text-slate-400 font-medium text-[11px]">
+      <i data-lucide="file-check" class="w-5 h-5 mb-0.5"></i>
+      <span>Liquidate</span>
+    </button>
+    <button type="button" data-tab="ambagan" class="mobile-nav-btn flex flex-col items-center justify-center py-1 text-slate-500 dark:text-slate-400 font-medium text-[11px]">
+      <i data-lucide="users" class="w-5 h-5 mb-0.5"></i>
+      <span>Ambagan</span>
+    </button>
+  </nav>
+
+  <!-- ========================================== -->
+  <!-- MODAL 1: ADD BUDGET INFLOW                 -->
+  <!-- ========================================== -->
+  <div id="modal-budget" class="fixed inset-0 z-50 hidden bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 no-print">
+    <div class="bg-white dark:bg-slate-900 rounded-3xl max-w-md w-full p-6 border border-slate-200 dark:border-slate-800 shadow-2xl space-y-4">
+      <div class="flex items-center justify-between">
+        <h3 class="text-base font-extrabold text-slate-900 dark:text-white">Add Budget / Inflow</h3>
+        <button type="button" id="btn-close-budget" class="p-1.5 rounded-xl text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800">
+          <i data-lucide="x" class="w-4 h-4"></i>
+        </button>
+      </div>
+
+      <form id="form-add-budget" class="space-y-3">
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <label class="block text-xs font-semibold text-slate-600 dark:text-slate-400 mb-1" for="budget-amount">Amount (₱) *</label>
+            <input id="budget-amount" type="number" step="0.01" min="0.01" required placeholder="1500" class="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-base font-mono font-bold outline-none focus:ring-2 focus:ring-emerald-500" />
+          </div>
+          <div>
+            <label class="block text-xs font-semibold text-slate-600 dark:text-slate-400 mb-1" for="budget-channel">Wallet / Method</label>
+            <select id="budget-channel" class="w-full px-3 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-xs">
+              <option value="GCash Wallet">GCash</option>
+              <option value="Cash on Hand">Cash</option>
+              <option value="Maya Wallet">Maya</option>
+              <option value="Bank Transfer">Bank Transfer</option>
+            </select>
+          </div>
+        </div>
+
+        <div>
+          <label class="block text-xs font-semibold text-slate-600 dark:text-slate-400 mb-1" for="budget-source">Source *</label>
+          <input id="budget-source" type="text" required placeholder="e.g. Allowance, Salary, Petty Cash" class="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-xs sm:text-sm outline-none focus:ring-2 focus:ring-emerald-500" />
+        </div>
+
+        <div>
+          <label class="block text-xs font-semibold text-slate-600 dark:text-slate-400 mb-1" for="budget-notes">Note (Optional)</label>
+          <input id="budget-notes" type="text" placeholder="e.g. Weekly allowance" class="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-xs sm:text-sm outline-none focus:ring-2 focus:ring-emerald-500" />
+        </div>
+
+        <div class="flex justify-end gap-2 pt-2">
+          <button type="button" id="btn-cancel-budget" class="px-4 py-2 rounded-xl text-xs font-bold bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300">Cancel</button>
+          <button type="submit" class="px-5 py-2 rounded-xl text-xs font-extrabold bg-emerald-600 hover:bg-emerald-700 text-white shadow-sm">Save Budget</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- ========================================== -->
+  <!-- MODAL 2: DETAILED MANUAL ENTRY             -->
+  <!-- ========================================== -->
+  <div id="modal-manual" class="fixed inset-0 z-50 hidden bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 no-print">
+    <div class="bg-white dark:bg-slate-900 rounded-3xl max-w-md w-full p-6 border border-slate-200 dark:border-slate-800 shadow-2xl space-y-4">
+      <div class="flex items-center justify-between">
+        <h3 class="text-base font-extrabold text-slate-900 dark:text-white">Log Transaction</h3>
+        <button type="button" id="btn-close-manual" class="p-1.5 rounded-xl text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800">
+          <i data-lucide="x" class="w-4 h-4"></i>
+        </button>
+      </div>
+
+      <form id="form-manual" class="space-y-3">
+        <div class="grid grid-cols-2 gap-1.5 p-1 rounded-xl bg-slate-100 dark:bg-slate-800">
+          <button type="button" id="btn-man-expense" class="py-1.5 rounded-lg text-xs font-bold bg-rose-600 text-white shadow-sm">Expense (-₱)</button>
+          <button type="button" id="btn-man-revenue" class="py-1.5 rounded-lg text-xs font-bold text-slate-600 dark:text-slate-300">Budget In (+₱)</button>
+        </div>
+        <input type="hidden" id="man-type" value="expense" />
+
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <label class="block text-xs font-semibold text-slate-600 dark:text-slate-400 mb-1" for="man-amount">Amount (₱) *</label>
+            <input id="man-amount" type="number" step="0.01" min="0.01" required placeholder="0.00" class="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-sm font-mono font-bold" />
+          </div>
+          <div>
+            <label class="block text-xs font-semibold text-slate-600 dark:text-slate-400 mb-1" for="man-date">Date *</label>
+            <input id="man-date" type="datetime-local" required class="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-xs" />
+          </div>
+        </div>
+
+        <div>
+          <label class="block text-xs font-semibold text-slate-600 dark:text-slate-400 mb-1" for="man-entity">Merchant / Source *</label>
+          <input id="man-entity" type="text" required placeholder="e.g. Karinderya, Jollibee, Parents" class="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-xs sm:text-sm" />
+        </div>
+
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <label class="block text-xs font-semibold text-slate-600 dark:text-slate-400 mb-1" for="man-category">Category</label>
+            <select id="man-category" class="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-xs">
+              <option value="Food & Dining">Food &amp; Dining</option>
+              <option value="Transportation & Commute">Transport &amp; Commute</option>
+              <option value="Academic & School Supplies">School Supplies</option>
+              <option value="Work & Classroom Supplies">Work &amp; Office</option>
+              <option value="Bills, Load & Subscriptions">Bills &amp; Load</option>
+              <option value="Personal & Leisure">Personal</option>
+              <option value="Allowance & Income">Allowance &amp; Income</option>
+            </select>
+          </div>
+          <div>
+            <label class="block text-xs font-semibold text-slate-600 dark:text-slate-400 mb-1" for="man-proof">Receipt Type</label>
+            <select id="man-proof" class="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-xs">
+              <option value="Walang Resibo">No Receipt</option>
+              <option value="Official Receipt (OR)">Official Receipt (OR)</option>
+              <option value="GCash / Maya">GCash / Maya</option>
+            </select>
+          </div>
+        </div>
+
+        <div>
+          <label class="block text-xs font-semibold text-slate-600 dark:text-slate-400 mb-1" for="man-notes">Notes *</label>
+          <input id="man-notes" type="text" required placeholder="What was this for?" class="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-xs sm:text-sm" />
+        </div>
+
+        <div class="flex justify-end gap-2 pt-2">
+          <button type="button" id="btn-cancel-manual" class="px-4 py-2 rounded-xl text-xs font-bold bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300">Cancel</button>
+          <button type="submit" class="px-5 py-2 rounded-xl text-xs font-extrabold bg-slate-900 dark:bg-emerald-600 text-white">Save Entry</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- ========================================== -->
+  <!-- MODAL 3: EDIT EXISTING TRANSACTION         -->
+  <!-- ========================================== -->
+  <div id="modal-edit-tx" class="fixed inset-0 z-50 hidden bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 no-print overflow-y-auto">
+    <div class="bg-white dark:bg-slate-900 rounded-3xl max-w-md w-full p-6 border border-slate-200 dark:border-slate-800 shadow-2xl space-y-4 my-auto">
+      <div class="flex items-center justify-between">
+        <h3 class="text-base font-extrabold text-slate-900 dark:text-white">Edit Transaction</h3>
+        <button type="button" id="btn-close-edit-tx" class="p-1.5 rounded-xl text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800">
+          <i data-lucide="x" class="w-4 h-4"></i>
+        </button>
+      </div>
+
+      <form id="form-edit-tx" class="space-y-3">
+        <input type="hidden" id="edit-tx-id" />
+        <div class="grid grid-cols-2 gap-1.5 p-1 rounded-xl bg-slate-100 dark:bg-slate-800">
+          <button type="button" id="btn-edit-type-expense" class="py-1.5 rounded-lg text-xs font-bold bg-rose-600 text-white shadow-sm">Expense (-₱)</button>
+          <button type="button" id="btn-edit-type-revenue" class="py-1.5 rounded-lg text-xs font-bold text-slate-600 dark:text-slate-300">Budget In (+₱)</button>
+        </div>
+        <input type="hidden" id="edit-tx-type" value="expense" />
+
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <label class="block text-xs font-semibold text-slate-600 dark:text-slate-400 mb-1" for="edit-tx-amount">Amount (₱) *</label>
+            <input id="edit-tx-amount" type="number" step="0.01" min="0.01" required class="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-sm font-mono font-bold" />
+          </div>
+          <div>
+            <label class="block text-xs font-semibold text-slate-600 dark:text-slate-400 mb-1" for="edit-tx-date">Date &amp; Time *</label>
+            <input id="edit-tx-date" type="datetime-local" required class="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-xs" />
+          </div>
+        </div>
+
+        <div>
+          <label class="block text-xs font-semibold text-slate-600 dark:text-slate-400 mb-1" for="edit-tx-entity">Merchant / Source *</label>
+          <input id="edit-tx-entity" type="text" required class="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-xs sm:text-sm font-semibold" />
+        </div>
+
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <label class="block text-xs font-semibold text-slate-600 dark:text-slate-400 mb-1" for="edit-tx-category">Category</label>
+            <select id="edit-tx-category" class="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-xs">
+              <option value="Food & Dining">Food &amp; Dining</option>
+              <option value="Transportation & Commute">Transport &amp; Commute</option>
+              <option value="Academic & School Supplies">School Supplies</option>
+              <option value="Work & Classroom Supplies">Work &amp; Office</option>
+              <option value="Bills, Load & Subscriptions">Bills &amp; Load</option>
+              <option value="Personal & Leisure">Personal</option>
+              <option value="Allowance & Income">Allowance &amp; Income</option>
+            </select>
+          </div>
+          <div>
+            <label class="block text-xs font-semibold text-slate-600 dark:text-slate-400 mb-1" for="edit-tx-proof">Receipt Type</label>
+            <select id="edit-tx-proof" class="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-xs">
+              <option value="Walang Resibo">No Receipt</option>
+              <option value="Official Receipt (OR)">Official Receipt (OR)</option>
+              <option value="GCash / Maya">GCash / Maya</option>
+              <option value="Bank Slip">Bank Slip</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <label class="block text-xs font-semibold text-slate-600 dark:text-slate-400 mb-1" for="edit-tx-ref">Ref / OR No.</label>
+            <input id="edit-tx-ref" type="text" class="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-xs font-mono" />
+          </div>
+          <div>
+            <label class="block text-xs font-semibold text-slate-600 dark:text-slate-400 mb-1" for="edit-tx-photo">Attach / Replace Photo</label>
+            <label for="edit-tx-photo" class="cursor-pointer w-full py-2 px-3 rounded-xl border border-dashed border-slate-300 dark:border-slate-700 hover:border-blue-500 text-[11px] font-bold text-slate-600 dark:text-slate-300 flex items-center justify-center gap-1.5">
+              <i data-lucide="image-plus" class="w-3.5 h-3.5 text-blue-500"></i>
+              <span id="edit-tx-photo-label">Choose Image</span>
+              <input id="edit-tx-photo" type="file" accept="image/*" class="hidden" />
+            </label>
+          </div>
+        </div>
+
+        <div>
+          <label class="block text-xs font-semibold text-slate-600 dark:text-slate-400 mb-1" for="edit-tx-notes">Notes *</label>
+          <input id="edit-tx-notes" type="text" required class="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-xs sm:text-sm" />
+        </div>
+
+        <div class="flex justify-end gap-2 pt-2">
+          <button type="button" id="btn-cancel-edit-tx" class="px-4 py-2 rounded-xl text-xs font-bold bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300">Cancel</button>
+          <button type="submit" class="px-5 py-2 rounded-xl text-xs font-extrabold bg-emerald-600 hover:bg-emerald-700 text-white shadow-sm">Save Changes</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- ========================================== -->
+  <!-- MODAL 4: RECEIPT OCR SCAN & VERIFICATION   -->
+  <!-- ========================================== -->
+  <div id="modal-verify-scan" class="fixed inset-0 z-50 hidden bg-slate-900/70 backdrop-blur-sm flex items-center justify-center p-4 no-print overflow-y-auto">
+    <div class="bg-white dark:bg-slate-900 rounded-3xl max-w-2xl w-full p-5 sm:p-6 border border-slate-200 dark:border-slate-800 shadow-2xl space-y-4 my-auto">
+      <div class="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-3">
+        <div>
+          <h3 class="text-base font-extrabold text-slate-900 dark:text-white">Verify Scanned Receipt</h3>
+          <p class="text-xs text-slate-500">Check the detected amount and store — photo proof will be saved in your vault</p>
+        </div>
+        <button type="button" id="btn-close-verify-scan" class="p-1.5 rounded-xl text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800">
+          <i data-lucide="x" class="w-4 h-4"></i>
+        </button>
+      </div>
+
+      <div class="grid grid-cols-1 md:grid-cols-12 gap-4 items-start">
+        <div class="md:col-span-5 space-y-2">
+          <div class="relative rounded-2xl border border-slate-200 dark:border-slate-700 overflow-hidden receipt-paper p-3 min-h-[200px] flex flex-col items-center justify-center bg-slate-50 dark:bg-slate-800/50">
+            <div id="verify-scan-beam" class="scanner-beam hidden"></div>
+            <img id="verify-scan-img" src="" alt="Receipt Preview" class="max-h-48 w-auto rounded-lg object-contain hidden" />
+            <div id="verify-scan-demo-html" class="w-full hidden"></div>
+            <div id="verify-scan-placeholder" class="text-xs text-slate-400 text-center">Reading receipt...</div>
+          </div>
+          <div class="space-y-1">
+            <div class="flex justify-between text-[11px]">
+              <span id="verify-scan-status" class="font-bold text-blue-600 dark:text-blue-400">Scanning...</span>
+              <span id="verify-scan-pct" class="font-mono text-slate-400">0%</span>
+            </div>
+            <div class="w-full h-1.5 bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden">
+              <div id="verify-scan-bar" class="h-full bg-blue-600 transition-all duration-200" style="width: 15%"></div>
+            </div>
+          </div>
+        </div>
+
+        <form id="form-verify-scan" class="md:col-span-7 space-y-3">
+          <div class="grid grid-cols-2 gap-3">
+            <div>
+              <label class="block text-xs font-bold text-slate-700 dark:text-slate-200 mb-1" for="scan-amount">Total (₱) *</label>
+              <input id="scan-amount" type="number" step="0.01" min="0.01" required placeholder="0.00" class="w-full px-3 py-2 rounded-xl border-2 border-blue-500 bg-blue-50/30 dark:bg-slate-800 text-base font-mono font-extrabold text-rose-600 dark:text-rose-400 outline-none" />
+            </div>
+            <div>
+              <label class="block text-xs font-semibold text-slate-600 dark:text-slate-400 mb-1" for="scan-ref">OR / Ref No.</label>
+              <input id="scan-ref" type="text" placeholder="OR-12345" class="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-xs font-mono" />
+            </div>
+          </div>
+
+          <div>
+            <label class="block text-xs font-semibold text-slate-600 dark:text-slate-400 mb-1" for="scan-merchant">Merchant / Store *</label>
+            <input id="scan-merchant" type="text" required placeholder="Store Name" class="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-xs sm:text-sm font-semibold" />
+          </div>
+
+          <div class="grid grid-cols-2 gap-3">
+            <div>
+              <label class="block text-xs font-semibold text-slate-600 dark:text-slate-400 mb-1" for="scan-category">Category</label>
+              <select id="scan-category" class="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-xs">
+                <option value="Food & Dining">Food &amp; Dining</option>
+                <option value="Transportation & Commute">Transport &amp; Commute</option>
+                <option value="Academic & School Supplies">School Supplies</option>
+                <option value="Work & Classroom Supplies">Work &amp; Office</option>
+                <option value="Bills, Load & Subscriptions">Bills &amp; Load</option>
+                <option value="Personal & Leisure">Personal</option>
+              </select>
+            </div>
+            <div>
+              <label class="block text-xs font-semibold text-slate-600 dark:text-slate-400 mb-1" for="scan-proof">Proof Type</label>
+              <select id="scan-proof" class="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-xs">
+                <option value="Official Receipt (OR)">Official Receipt (OR)</option>
+                <option value="GCash / Maya">GCash / Maya</option>
+                <option value="Bank Slip">Bank Slip</option>
+              </select>
+            </div>
+          </div>
+
+          <div>
+            <label class="block text-xs font-semibold text-slate-600 dark:text-slate-400 mb-1" for="scan-items">Items / Particulars *</label>
+            <input id="scan-items" type="text" required placeholder="Particulars" class="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-xs" />
+          </div>
+
+          <input id="scan-date" type="hidden" />
+
+          <div class="flex justify-end gap-2 pt-2">
+            <button type="button" id="btn-cancel-verify-scan" class="px-4 py-2 rounded-xl text-xs font-bold bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300">Cancel</button>
+            <button type="submit" class="px-5 py-2 rounded-xl text-xs font-extrabold bg-emerald-600 hover:bg-emerald-700 text-white shadow-sm">Save Receipt</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <!-- ========================================== -->
+  <!-- MODAL 5: RECEIPT PROOF VAULT VIEWER        -->
+  <!-- ========================================== -->
+  <div id="modal-receipt-viewer" class="fixed inset-0 z-50 hidden bg-slate-900/75 backdrop-blur-sm flex items-center justify-center p-4 no-print">
+    <div class="bg-white dark:bg-slate-900 rounded-3xl max-w-md w-full p-6 border border-slate-200 dark:border-slate-800 shadow-2xl space-y-4">
+      <div class="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-3">
+        <div>
+          <h3 id="viewer-merchant" class="text-base font-extrabold text-slate-900 dark:text-white">Receipt Proof</h3>
+          <p id="viewer-meta" class="text-xs text-slate-500 mt-0.5">Ref #OR-0000</p>
+        </div>
+        <button type="button" id="btn-close-viewer" class="p-1.5 rounded-xl text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800">
+          <i data-lucide="x" class="w-4 h-4"></i>
+        </button>
+      </div>
+
+      <div class="rounded-2xl border border-slate-200 dark:border-slate-700 receipt-paper p-4 flex flex-col items-center justify-center bg-slate-50 dark:bg-slate-800/60 max-h-[360px] overflow-y-auto">
+        <img id="viewer-img" src="" alt="Saved Receipt Proof" class="max-h-72 w-auto rounded-xl object-contain shadow-sm hidden" />
+        <div id="viewer-slip-html" class="w-full hidden"></div>
+      </div>
+
+      <div class="flex items-center justify-between gap-2 pt-1">
+        <span id="viewer-amount" class="font-mono text-lg font-extrabold text-rose-600 dark:text-rose-400">₱0.00</span>
+        <div class="flex items-center gap-2">
+          <button type="button" id="btn-viewer-download" class="hidden inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold transition">
+            <i data-lucide="download" class="w-3.5 h-3.5"></i>
+            <span>Download</span>
+          </button>
+          <button type="button" id="btn-viewer-done" class="px-4 py-2 rounded-xl bg-slate-900 dark:bg-slate-700 text-white text-xs font-bold">Close</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ========================================== -->
+  <!-- MODAL 6: CATEGORY WEEKLY SPENDING LIMITS   -->
+  <!-- ========================================== -->
+  <div id="modal-category-limits" class="fixed inset-0 z-50 hidden bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 no-print">
+    <div class="bg-white dark:bg-slate-900 rounded-3xl max-w-md w-full p-6 border border-slate-200 dark:border-slate-800 shadow-2xl space-y-4">
+      <div class="flex items-center justify-between">
+        <div>
+          <h3 class="text-base font-extrabold text-slate-900 dark:text-white">Weekly Category Limits</h3>
+          <p class="text-xs text-slate-500 mt-0.5">Optional weekly caps — bars turn amber at 80%</p>
+        </div>
+        <button type="button" id="btn-close-limits" class="p-1.5 rounded-xl text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800">
+          <i data-lucide="x" class="w-4 h-4"></i>
+        </button>
+      </div>
+
+      <form id="form-category-limits" class="space-y-3 max-h-80 overflow-y-auto pr-1"></form>
+
+      <div class="flex justify-end gap-2 pt-2 border-t border-slate-100 dark:border-slate-800">
+        <button type="button" id="btn-cancel-limits" class="px-4 py-2 rounded-xl text-xs font-bold bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300">Cancel</button>
+        <button type="submit" form="form-category-limits" class="px-5 py-2 rounded-xl text-xs font-extrabold bg-emerald-600 hover:bg-emerald-700 text-white shadow-sm">Save Limits</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ========================================== -->
+  <!-- MODAL 7: ADD RECURRING EXPENSE / BILL      -->
+  <!-- ========================================== -->
+  <div id="modal-recurring" class="fixed inset-0 z-50 hidden bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 no-print">
+    <div class="bg-white dark:bg-slate-900 rounded-3xl max-w-md w-full p-6 border border-slate-200 dark:border-slate-800 shadow-2xl space-y-4">
+      <div class="flex items-center justify-between">
+        <h3 class="text-base font-extrabold text-slate-900 dark:text-white">Add Recurring Expense</h3>
+        <button type="button" id="btn-close-recurring" class="p-1.5 rounded-xl text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800">
+          <i data-lucide="x" class="w-4 h-4"></i>
+        </button>
+      </div>
+
+      <form id="form-add-recurring" class="space-y-3">
+        <div>
+          <label class="block text-xs font-semibold text-slate-600 dark:text-slate-400 mb-1" for="rec-title">Bill / Expense Name *</label>
+          <input id="rec-title" type="text" required placeholder="e.g. Weekly Load Promo, Commute Pass" class="w-full px-3.5 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-xs sm:text-sm" />
+        </div>
+
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <label class="block text-xs font-semibold text-slate-600 dark:text-slate-400 mb-1" for="rec-amount">Amount (₱) *</label>
+            <input id="rec-amount" type="number" step="0.01" min="0.01" required placeholder="99.00" class="w-full px-3.5 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-sm font-mono font-bold" />
+          </div>
+          <div>
+            <label class="block text-xs font-semibold text-slate-600 dark:text-slate-400 mb-1" for="rec-frequency">Cycle</label>
+            <select id="rec-frequency" class="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-xs">
+              <option value="weekly">Weekly</option>
+              <option value="monthly">Monthly</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <label class="block text-xs font-semibold text-slate-600 dark:text-slate-400 mb-1" for="rec-category">Category</label>
+            <select id="rec-category" class="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-xs">
+              <option value="Bills, Load & Subscriptions">Bills &amp; Load</option>
+              <option value="Transportation & Commute">Transport &amp; Commute</option>
+              <option value="Food & Dining">Food &amp; Dining</option>
+              <option value="Academic & School Supplies">School Supplies</option>
+              <option value="Work & Classroom Supplies">Work &amp; Office</option>
+              <option value="Personal & Leisure">Personal</option>
+            </select>
+          </div>
+          <div>
+            <label class="block text-xs font-semibold text-slate-600 dark:text-slate-400 mb-1" for="rec-due">Next Due Date *</label>
+            <input id="rec-due" type="date" required class="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-xs" />
+          </div>
+        </div>
+
+        <div class="flex justify-end gap-2 pt-2">
+          <button type="button" id="btn-cancel-recurring" class="px-4 py-2 rounded-xl text-xs font-bold bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300">Cancel</button>
+          <button type="submit" class="px-5 py-2 rounded-xl text-xs font-extrabold bg-emerald-600 hover:bg-emerald-700 text-white shadow-sm">Save Reminder</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- ========================================== -->
+  <!-- MODAL 8: DATA, BACKUP & START FRESH        -->
+  <!-- ========================================== -->
+  <div id="modal-data" class="fixed inset-0 z-50 hidden bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 no-print">
+    <div class="bg-white dark:bg-slate-900 rounded-3xl max-w-md w-full p-6 border border-slate-200 dark:border-slate-800 shadow-2xl space-y-4">
+      <div class="flex items-center justify-between">
+        <div>
+          <h3 class="text-base font-extrabold text-slate-900 dark:text-white">Personal Data &amp; Backup</h3>
+          <p id="data-storage-summary" class="text-xs text-slate-500 mt-0.5">0 transactions saved on this device</p>
+        </div>
+        <button type="button" id="btn-close-data" class="p-1.5 rounded-xl text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800">
+          <i data-lucide="x" class="w-4 h-4"></i>
+        </button>
+      </div>
+
+      <div class="p-4 rounded-2xl bg-slate-50 dark:bg-slate-800/70 border border-slate-200/80 dark:border-slate-700 space-y-2.5">
+        <div>
+          <div class="text-xs font-extrabold text-slate-900 dark:text-white">Start Fresh (Empty ₱0.00 Ledger)</div>
+          <div class="text-[11px] text-slate-500">Clear sample data so you can enter your real budget.</div>
+        </div>
+        <div id="confirm-fresh-row">
+          <button type="button" id="btn-trigger-start-fresh" class="w-full py-2 px-3 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold transition">
+            Clear All &amp; Start at ₱0.00
+          </button>
+        </div>
+        <div id="confirm-fresh-verify" class="hidden flex items-center gap-2">
+          <button type="button" id="btn-confirm-start-fresh" class="flex-1 py-2 px-3 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-extrabold transition">
+            Yes, Wipe &amp; Start at ₱0
+          </button>
+          <button type="button" id="btn-cancel-start-fresh" class="py-2 px-3 rounded-xl bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-200 text-xs font-bold">
+            Cancel
+          </button>
+        </div>
+      </div>
+
+      <div class="space-y-2">
+        <div class="text-xs font-bold text-slate-700 dark:text-slate-300">Backup &amp; Transfer</div>
+        <div class="grid grid-cols-2 gap-2.5">
+          <button type="button" id="btn-export-json" class="py-2.5 px-3 rounded-xl border border-slate-200 dark:border-slate-700 hover:border-emerald-500 text-xs font-bold text-slate-800 dark:text-slate-200 flex items-center justify-center gap-1.5 transition">
+            <i data-lucide="download" class="w-3.5 h-3.5 text-emerald-600"></i>
+            <span>Backup (.JSON)</span>
+          </button>
+          <button type="button" id="btn-export-csv" class="py-2.5 px-3 rounded-xl border border-slate-200 dark:border-slate-700 hover:border-blue-500 text-xs font-bold text-slate-800 dark:text-slate-200 flex items-center justify-center gap-1.5 transition">
+            <i data-lucide="file-spreadsheet" class="w-3.5 h-3.5 text-blue-600"></i>
+            <span>Excel (.CSV)</span>
+          </button>
+        </div>
+
+        <label for="input-import-json" class="cursor-pointer w-full py-2.5 px-3 rounded-xl border border-dashed border-slate-300 dark:border-slate-700 hover:border-emerald-500 text-xs font-bold text-slate-700 dark:text-slate-300 flex items-center justify-center gap-1.5 transition">
+          <i data-lucide="upload" class="w-3.5 h-3.5 text-emerald-600"></i>
+          <span>Restore from Backup (.JSON)</span>
+          <input id="input-import-json" type="file" accept=".json,application/json" class="hidden" />
+        </label>
+      </div>
+
+      <div class="pt-2 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between text-xs">
+        <span class="text-slate-400">Need multi-week test entries?</span>
+        <button type="button" id="btn-load-sample-data" class="font-bold text-blue-600 dark:text-blue-400 hover:underline">
+          Load Sample Data
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // =====================================================
+    // 1. PERSISTENT STORAGE, DATE HELPERS & SAMPLE DATA
+    // =====================================================
+    const STORAGE_KEY = 'resiboss_ledger_v4';
+
+    const EXPENSE_CATEGORIES = [
+      'Food & Dining',
+      'Transportation & Commute',
+      'Academic & School Supplies',
+      'Work & Classroom Supplies',
+      'Bills, Load & Subscriptions',
+      'Personal & Leisure'
+    ];
+
+    const CATEGORY_COLORS = {
+      'Food & Dining': '#10b981',
+      'Transportation & Commute': '#3b82f6',
+      'Academic & School Supplies': '#f59e0b',
+      'Work & Classroom Supplies': '#8b5cf6',
+      'Bills, Load & Subscriptions': '#ec4899',
+      'Personal & Leisure': '#64748b',
+      'Allowance & Income': '#14b8a6'
+    };
+
+    function daysAgoISO(daysAgo, hour = 10, minute = 0) {
+      const d = new Date();
+      d.setDate(d.getDate() - daysAgo);
+      d.setHours(hour, minute, 0, 0);
+      const offset = d.getTimezoneOffset() * 60000;
+      return new Date(d - offset).toISOString().slice(0, 16);
+    }
+
+    function todayDateStr(offsetDays = 0) {
+      const d = new Date();
+      d.setDate(d.getDate() + offsetDays);
+      const offset = d.getTimezoneOffset() * 60000;
+      return new Date(d - offset).toISOString().slice(0, 10);
+    }
+
+    function buildSampleTransactions() {
+      return [
+        // This Week
+        {
+          id: 'sample-rev-1',
+          type: 'revenue',
+          amount: 3500.00,
+          date: daysAgoISO(0, 8, 0),
+          entity: 'Family Allowance',
+          category: 'Allowance & Income',
+          proofType: 'Bank Transfer',
+          refNo: 'BPI-99201',
+          notes: 'Weekly living & school allowance',
+          selectedForLiq: false
+        },
+        {
+          id: 'sample-rev-2',
+          type: 'revenue',
+          amount: 1500.00,
+          date: daysAgoISO(1, 10, 30),
+          entity: 'Department Petty Cash',
+          category: 'Allowance & Income',
+          proofType: 'GCash Wallet',
+          refNo: 'GC-77482',
+          notes: 'Event & classroom supplies advance',
+          selectedForLiq: false
+        },
+        {
+          id: 'sample-exp-1',
+          type: 'expense',
+          amount: 485.00,
+          date: daysAgoISO(0, 9, 15),
+          entity: 'National Book Store',
+          category: 'Work & Classroom Supplies',
+          proofType: 'Official Receipt (OR)',
+          refNo: 'OR-884120',
+          notes: 'Whiteboard markers, expanding folders, index cards',
+          demoReceiptKey: 'nbs',
+          selectedForLiq: true
+        },
+        {
+          id: 'sample-exp-2',
+          type: 'expense',
+          amount: 35.00,
+          date: daysAgoISO(0, 7, 40),
+          entity: 'Tricycle Fare',
+          category: 'Transportation & Commute',
+          proofType: 'Walang Resibo',
+          refNo: 'NO-OR',
+          notes: 'Morning commute to campus',
+          selectedForLiq: true
+        },
+        // Last Week (7 days ago)
+        {
+          id: 'sample-exp-3',
+          type: 'expense',
+          amount: 250.00,
+          date: daysAgoISO(7, 16, 45),
+          entity: 'CopyTrade Print Hub',
+          category: 'Academic & School Supplies',
+          proofType: 'GCash / Maya',
+          refNo: 'GC-901847',
+          notes: 'Colored printing & binding of case study',
+          demoReceiptKey: 'gcash',
+          selectedForLiq: true
+        },
+        {
+          id: 'sample-exp-4',
+          type: 'expense',
+          amount: 165.00,
+          date: daysAgoISO(8, 13, 5),
+          entity: 'Jollibee',
+          category: 'Food & Dining',
+          proofType: 'Official Receipt (OR)',
+          refNo: 'SI-104928',
+          notes: '1pc Chickenjoy meal during group prep',
+          demoReceiptKey: 'jollibee',
+          selectedForLiq: false
+        },
+        {
+          id: 'sample-exp-5',
+          type: 'expense',
+          amount: 95.00,
+          date: daysAgoISO(9, 12, 20),
+          entity: "Ate Nena's Karinderya",
+          category: 'Food & Dining',
+          proofType: 'Walang Resibo',
+          refNo: 'NO-OR',
+          notes: 'Lunch meal with bottled water',
+          selectedForLiq: false
+        },
+        // 2 Weeks Ago (14 days ago)
+        {
+          id: 'sample-exp-6',
+          type: 'expense',
+          amount: 320.00,
+          date: daysAgoISO(14, 15, 10),
+          entity: 'Mercury Drug & Groceries',
+          category: 'Personal & Leisure',
+          proofType: 'Official Receipt (OR)',
+          refNo: 'OR-551902',
+          notes: 'Vitamins and weekly dorm snacks',
+          selectedForLiq: false
+        },
+        {
+          id: 'sample-exp-7',
+          type: 'expense',
+          amount: 140.00,
+          date: daysAgoISO(15, 8, 30),
+          entity: 'Jeepney & LRT Commute',
+          category: 'Transportation & Commute',
+          proofType: 'Walang Resibo',
+          refNo: 'NO-OR',
+          notes: 'Roundtrip campus & library commute',
+          selectedForLiq: true
+        }
+      ];
+    }
+
+    function buildSampleRecurring() {
+      return [
+        {
+          id: 'rec-1',
+          title: 'Weekly Data / Load Promo',
+          amount: 99.00,
+          category: 'Bills, Load & Subscriptions',
+          frequency: 'weekly',
+          nextDueDate: todayDateStr(0)
+        },
+        {
+          id: 'rec-2',
+          title: 'Weekly Jeepney & Tricycle Pass',
+          amount: 150.00,
+          category: 'Transportation & Commute',
+          frequency: 'weekly',
+          nextDueDate: todayDateStr(2)
+        },
+        {
+          id: 'rec-3',
+          title: 'Student Cloud & Notes Plan',
+          amount: 149.00,
+          category: 'Bills, Load & Subscriptions',
+          frequency: 'monthly',
+          nextDueDate: todayDateStr(5)
+        }
+      ];
+    }
+
+    const SAMPLE_AMBAGAN = [
+      { id: 'm1', name: 'Alex (You)', paid: true, credited: true },
+      { id: 'm2', name: 'Bea', paid: true, credited: false },
+      { id: 'm3', name: 'Carlo', paid: false, credited: false },
+      { id: 'm4', name: 'Danica', paid: false, credited: false }
+    ];
+
+    const DEMO_RECEIPTS = {
+      nbs: {
+        merchant: 'National Book Store',
+        amount: 485.00,
+        ref: 'OR-884120',
+        proofType: 'Official Receipt (OR)',
+        category: 'Work & Classroom Supplies',
+        items: '3x Whiteboard Markers, 2x Expanding Folders, 1x Index Card Pack',
+        previewHtml: `
+          <div class="text-left font-mono text-[11px] space-y-1.5 text-slate-800 dark:text-slate-200">
+            <div class="text-center border-b border-dashed border-slate-400 pb-1.5">
+              <div class="font-bold text-xs">NATIONAL BOOK STORE, INC.</div>
+              <div class="text-[10px] font-bold text-emerald-600">OFFICIAL RECEIPT #OR-884120</div>
+            </div>
+            <div class="space-y-0.5 py-1">
+              <div class="flex justify-between"><span>3x PILOT MARKER</span><span>195.00</span></div>
+              <div class="flex justify-between"><span>2x EXPANDING FOLDER</span><span>180.00</span></div>
+              <div class="flex justify-between"><span>1x INDEX CARDS</span><span>110.00</span></div>
+            </div>
+            <div class="border-t border-dashed border-slate-400 pt-1 flex justify-between font-bold text-xs">
+              <span>TOTAL DUE</span><span>₱485.00</span>
+            </div>
+          </div>
+        `
+      },
+      gcash: {
+        merchant: 'CopyTrade Print Hub',
+        amount: 250.00,
+        ref: 'GC-901847',
+        proofType: 'GCash / Maya',
+        category: 'Academic & School Supplies',
+        items: 'GCash payment for Thesis Printing & Binding',
+        previewHtml: `
+          <div class="rounded-xl bg-blue-600 text-white p-3 font-sans text-left space-y-1.5">
+            <div class="flex justify-between border-b border-blue-400/50 pb-1">
+              <span class="font-extrabold text-xs">GCash Express Send</span>
+              <span class="text-[10px] bg-white/20 px-1.5 py-0.5 rounded">Sent</span>
+            </div>
+            <div class="text-center py-1">
+              <div class="text-[10px] text-blue-100">Amount Sent</div>
+              <div class="text-lg font-extrabold font-mono">₱250.00</div>
+              <div class="text-[11px] font-semibold">To: CopyTrade Print Hub</div>
+            </div>
+            <div class="text-[10px] bg-blue-700/60 p-1.5 rounded font-mono text-center">Ref No. 9018 472 614</div>
+          </div>
+        `
+      },
+      jollibee: {
+        merchant: 'Jollibee',
+        amount: 165.00,
+        ref: 'SI-104928',
+        proofType: 'Official Receipt (OR)',
+        category: 'Food & Dining',
+        items: '1pc Chickenjoy meal during group prep',
+        previewHtml: `
+          <div class="text-left font-mono text-[11px] space-y-1.5 text-slate-800 dark:text-slate-200">
+            <div class="text-center border-b border-dashed border-slate-400 pb-1.5">
+              <div class="font-bold text-xs">JOLLIBEE FOODS CORP.</div>
+              <div class="text-[10px] font-bold text-rose-600">SALES INVOICE #SI-104928</div>
+            </div>
+            <div class="space-y-0.5 py-1">
+              <div class="flex justify-between"><span>1x C1 CHICKENJOY MEAL</span><span>115.00</span></div>
+              <div class="flex justify-between"><span>1x PEACH MANGO PIE</span><span>50.00</span></div>
+            </div>
+            <div class="border-t border-dashed border-slate-400 pt-1 flex justify-between font-bold text-xs">
+              <span>TOTAL PAID</span><span>₱165.00</span>
+            </div>
+          </div>
+        `
+      }
+    };
+
+    let state = {
+      initialized: false,
+      isDemoData: true,
+      bannerDismissed: false,
+      transactions: [],
+      savingsGoal: 500.00,
+      timeframe: 'this_week',
+      feedFilter: 'all',
+      histView: 'timeline',
+      expandedWeekKey: null,
+      categoryLimits: {
+        'Food & Dining': 600,
+        'Transportation & Commute': 300,
+        'Work & Classroom Supplies': 800
+      },
+      recurringItems: [],
+      ambaganMembers: [],
+      ambaganTitle: 'Thesis Printing',
+      ambaganTotal: 600.00,
+      darkMode: false
+    };
+
+    let expenseChart = null;
+    let pendingScannedImage = null;
+    let pendingEditImage = null;
+
+    function loadState() {
+      try {
+        const raw = localStorage.getItem(STORAGE_KEY);
+        if (raw) {
+          const parsed = JSON.parse(raw);
+          if (parsed && typeof parsed === 'object') {
+            state.initialized = true;
+            state.isDemoData = Boolean(parsed.isDemoData);
+            state.bannerDismissed = Boolean(parsed.bannerDismissed);
+            state.transactions = Array.isArray(parsed.transactions) ? parsed.transactions : [];
+            state.savingsGoal = parsed.savingsGoal !== undefined ? Number(parsed.savingsGoal) : 500.00;
+            state.timeframe = parsed.timeframe || 'this_week';
+            state.feedFilter = parsed.feedFilter || 'all';
+            state.histView = parsed.histView || 'timeline';
+            state.expandedWeekKey = parsed.expandedWeekKey || null;
+            state.categoryLimits = (parsed.categoryLimits && typeof parsed.categoryLimits === 'object') ? parsed.categoryLimits : {};
+            state.recurringItems = Array.isArray(parsed.recurringItems) ? parsed.recurringItems : [];
+            state.ambaganMembers = Array.isArray(parsed.ambaganMembers) ? parsed.ambaganMembers : [];
+            state.ambaganTitle = parsed.ambaganTitle || 'Thesis Printing';
+            state.ambaganTotal = parsed.ambaganTotal !== undefined ? Number(parsed.ambaganTotal) : 600.00;
+            state.darkMode = Boolean(parsed.darkMode);
+            return;
+          }
+        }
+      } catch (err) {
+        console.warn('Storage read warning:', err);
+      }
+
+      state.initialized = true;
+      state.isDemoData = true;
+      state.bannerDismissed = false;
+      state.transactions = buildSampleTransactions();
+      state.recurringItems = buildSampleRecurring();
+      state.ambaganMembers = JSON.parse(JSON.stringify(SAMPLE_AMBAGAN));
+      state.savingsGoal = 500.00;
+      state.categoryLimits = {
+        'Food & Dining': 600,
+        'Transportation & Commute': 300,
+        'Work & Classroom Supplies': 800
+      };
+      saveState();
+    }
+
+    function saveState() {
+      try {
+        state.initialized = true;
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+        const pill = document.getElementById('save-status-pill');
+        if (pill) {
+          pill.innerHTML = `<span class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span><span>Saved</span>`;
+        }
+      } catch (err) {
+        // If localStorage quota is exceeded by large images, strip oldest receiptImage thumbnails and retry
+        try {
+          const trimmed = JSON.parse(JSON.stringify(state));
+          for (let i = trimmed.transactions.length - 1; i >= 0; i--) {
+            if (trimmed.transactions[i].receiptImage) {
+              delete trimmed.transactions[i].receiptImage;
+              break;
+            }
+          }
+          localStorage.setItem(STORAGE_KEY, JSON.stringify(trimmed));
+        } catch (e2) {
+          const pill = document.getElementById('save-status-pill');
+          if (pill) {
+            pill.innerHTML = `<span class="w-1.5 h-1.5 rounded-full bg-amber-500"></span><span>Storage Full</span>`;
+          }
+        }
+      }
+    }
+
+    // =====================================================
+    // 2. CALENDAR WEEK & DATE UTILITIES (MON - SUN)
+    // =====================================================
+    function getMondayOfWeek(dateInput) {
+      const d = new Date(dateInput);
+      if (isNaN(d.getTime())) return getMondayOfWeek(new Date());
+      d.setHours(0, 0, 0, 0);
+      const day = d.getDay(); // 0 = Sun, 1 = Mon, ..., 6 = Sat
+      const diff = day === 0 ? -6 : 1 - day;
+      d.setDate(d.getDate() + diff);
+      return d;
+    }
+
+    function formatWeekKey(mondayDate) {
+      const y = mondayDate.getFullYear();
+      const m = String(mondayDate.getMonth() + 1).padStart(2, '0');
+      const day = String(mondayDate.getDate()).padStart(2, '0');
+      return `${y}-${m}-${day}`;
+    }
+
+    function getRemainingDaysInWeek() {
+      const now = new Date();
+      const day = now.getDay(); // 0 = Sun -> 1 day left; 1 = Mon -> 7 days left
+      return day === 0 ? 1 : 8 - day;
+    }
+
+    function getWeekLabelAndRange(mondayDate) {
+      const thisMon = getMondayOfWeek(new Date());
+      const diffWeeks = Math.round((thisMon.getTime() - mondayDate.getTime()) / (7 * 24 * 60 * 60 * 1000));
+      const sundayDate = new Date(mondayDate);
+      sundayDate.setDate(mondayDate.getDate() + 6);
+
+      const startFmt = mondayDate.toLocaleDateString('en-PH', { month: 'short', day: 'numeric' });
+      const endFmt = sundayDate.toLocaleDateString('en-PH', { month: 'short', day: 'numeric' });
+      const range = `${startFmt} – ${endFmt}`;
+
+      let label = `${startFmt} – ${endFmt}`;
+      if (diffWeeks === 0) label = 'This Week';
+      else if (diffWeeks === 1) label = 'Last Week';
+      else if (diffWeeks === 2) label = '2 Weeks Ago';
+      else if (diffWeeks > 2) label = `${diffWeeks} Weeks Ago`;
+      else if (diffWeeks < 0) label = 'Upcoming';
+
+      return { label, range, diffWeeks };
+    }
+
+    function filterByTimeframe(txList) {
+      if (state.timeframe === 'all') return txList;
+      const now = new Date();
+      const thisMon = getMondayOfWeek(now);
+      const lastMon = new Date(thisMon);
+      lastMon.setDate(thisMon.getDate() - 7);
+      const twoWeeksAgoMon = new Date(thisMon);
+      twoWeeksAgoMon.setDate(thisMon.getDate() - 14);
+      const rolling14Start = new Date(now);
+      rolling14Start.setDate(now.getDate() - 13);
+      rolling14Start.setHours(0, 0, 0, 0);
+
+      return txList.filter(t => {
+        const d = new Date(t.date);
+        if (isNaN(d.getTime())) return true;
+        const txMon = getMondayOfWeek(d);
+        if (state.timeframe === 'this_week') {
+          return txMon.getTime() === thisMon.getTime();
+        }
+        if (state.timeframe === 'last_week') {
+          return txMon.getTime() === lastMon.getTime();
+        }
+        if (state.timeframe === 'two_weeks_ago') {
+          return txMon.getTime() === twoWeeksAgoMon.getTime();
+        }
+        if (state.timeframe === 'past_2_weeks') {
+          return d.getTime() >= rolling14Start.getTime();
+        }
+        if (state.timeframe === 'month') {
+          return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear();
+        }
+        return true;
+      });
+    }
+
+    function formatPHP(val) {
+      const n = Number(val) || 0;
+      return '₱' + n.toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    }
+
+    function nowLocalISO() {
+      const now = new Date();
+      const offset = now.getTimezoneOffset() * 60000;
+      return new Date(now - offset).toISOString().slice(0, 16);
+    }
+
+    function formatShortDate(isoStr) {
+      if (!isoStr) return 'Today';
+      const d = new Date(isoStr);
+      if (isNaN(d.getTime())) return isoStr;
+      return d.toLocaleDateString('en-PH', { month: 'short', day: 'numeric' });
+    }
+
+    function escapeHtml(str) {
+      return String(str || '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;');
+    }
+
+    function showToast(title, subtitle = '', tone = 'emerald') {
+      const container = document.getElementById('toast-container');
+      if (!container) return;
+      const el = document.createElement('div');
+      const styles = {
+        emerald: 'border-emerald-500 bg-slate-900 text-white',
+        blue: 'border-blue-500 bg-slate-900 text-white',
+        amber: 'border-amber-500 bg-slate-900 text-white',
+        rose: 'border-rose-500 bg-rose-950 text-white'
+      };
+      el.className = `pointer-events-auto rounded-2xl border-l-4 p-3.5 shadow-xl transition-all duration-300 ${styles[tone] || styles.emerald}`;
+      el.innerHTML = `
+        <div class="text-xs font-bold">${escapeHtml(title)}</div>
+        ${subtitle ? `<div class="text-[11px] text-slate-300 mt-0.5">${escapeHtml(subtitle)}</div>` : ''}
+      `;
+      container.appendChild(el);
+      setTimeout(() => {
+        el.style.opacity = '0';
+        setTimeout(() => el.remove(), 250);
+      }, 3000);
+    }
+
+    function hasReceiptProof(tx) {
+      return Boolean(tx.receiptImage || tx.demoReceiptKey);
+    }
+
+    // =====================================================
+    // 3. RENDERING ENGINE
+    // =====================================================
+    function renderAll() {
+      updateBannerVisibility();
+      renderHome();
+      renderChartAndLegend();
+      renderWeeklyBreakdown();
+      renderRecurringList();
+      renderHistory();
+      renderLiquidation();
+      renderAmbagan();
+      updateDataModalSummary();
+      if (typeof lucide !== 'undefined' && lucide.createIcons) {
+        lucide.createIcons();
+      }
+    }
+
+    function updateBannerVisibility() {
+      const banner = document.getElementById('demo-banner');
+      if (!banner) return;
+      if (state.isDemoData && !state.bannerDismissed) {
+        banner.classList.remove('hidden');
+      } else {
+        banner.classList.add('hidden');
+      }
+    }
+
+    function renderHome() {
+      const revenues = state.transactions.filter(t => t.type === 'revenue');
+      const expenses = state.transactions.filter(t => t.type === 'expense');
+
+      const totalBudget = revenues.reduce((s, t) => s + Number(t.amount), 0);
+      const totalSpentAll = expenses.reduce((s, t) => s + Number(t.amount), 0);
+      const remainingBalance = totalBudget - totalSpentAll;
+
+      const goal = Number(state.savingsGoal) || 0;
+      const safeSpend = remainingBalance - goal;
+      const daysLeft = getRemainingDaysInWeek();
+      const dailySafe = safeSpend > 0 ? safeSpend / daysLeft : 0;
+
+      const pctLeft = totalBudget > 0 ? Math.max(0, Math.min(100, Math.round((remainingBalance / totalBudget) * 100))) : 0;
+
+      document.getElementById('home-balance-val').textContent = formatPHP(remainingBalance);
+      document.getElementById('home-spent-label').textContent = `Spent: ${formatPHP(totalSpentAll)}`;
+      document.getElementById('home-budget-label').textContent = `Budget: ${formatPHP(totalBudget)}`;
+
+      const bar = document.getElementById('home-progress-bar');
+      bar.style.width = `${pctLeft}%`;
+      bar.className = `h-full rounded-full transition-all duration-300 ${pctLeft > 35 ? 'bg-emerald-500' : pctLeft > 15 ? 'bg-amber-500' : 'bg-rose-500'}`;
+
+      const safeEl = document.getElementById('home-safe-spend');
+      safeEl.textContent = formatPHP(safeSpend);
+      safeEl.className = safeSpend >= 0
+        ? 'text-lg font-extrabold font-mono text-emerald-700 dark:text-emerald-400 mt-0.5'
+        : 'text-lg font-extrabold font-mono text-rose-600 dark:text-rose-400 mt-0.5';
+
+      const dailyEl = document.getElementById('home-daily-allowance');
+      if (safeSpend > 0) {
+        dailyEl.textContent = `${formatPHP(dailySafe)}/day • ${daysLeft} day${daysLeft === 1 ? '' : 's'} left this wk`;
+        dailyEl.className = 'text-[11px] font-semibold text-emerald-800 dark:text-emerald-300 mt-1.5 pt-1.5 border-t border-emerald-200/60 dark:border-emerald-800/60';
+      } else {
+        dailyEl.textContent = `₱0.00/day • Savings goal exceeded`;
+        dailyEl.className = 'text-[11px] font-semibold text-rose-600 dark:text-rose-400 mt-1.5 pt-1.5 border-t border-emerald-200/60 dark:border-emerald-800/60';
+      }
+
+      const goalInput = document.getElementById('input-savings-goal');
+      if (document.activeElement !== goalInput) {
+        goalInput.value = goal;
+      }
+
+      const goalBadge = document.getElementById('home-savings-badge');
+      if (safeSpend >= 0) {
+        goalBadge.textContent = 'On Track';
+        goalBadge.className = 'text-[10px] font-bold text-emerald-600 dark:text-emerald-400';
+      } else {
+        goalBadge.textContent = 'Over Goal';
+        goalBadge.className = 'text-[10px] font-bold text-amber-600 dark:text-amber-400';
+      }
+
+      // Timeframe buttons
+      document.querySelectorAll('.timeframe-btn').forEach(btn => {
+        const active = btn.getAttribute('data-timeframe') === state.timeframe;
+        btn.className = active
+          ? 'timeframe-btn px-2.5 py-1 rounded-lg font-bold bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-sm whitespace-nowrap transition'
+          : 'timeframe-btn px-2.5 py-1 rounded-lg font-semibold text-slate-500 dark:text-slate-400 whitespace-nowrap transition';
+      });
+
+      // Feed filter buttons
+      document.querySelectorAll('.feed-filter-btn').forEach(btn => {
+        const active = btn.getAttribute('data-feed-filter') === state.feedFilter;
+        btn.className = active
+          ? 'feed-filter-btn px-3 py-1 rounded-lg font-bold bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-sm transition'
+          : 'feed-filter-btn px-3 py-1 rounded-lg font-semibold text-slate-500 dark:text-slate-400 transition';
+      });
+
+      const filteredFeed = state.transactions
+        .filter(t => state.feedFilter === 'all' ? true : t.type === state.feedFilter)
+        .sort((a, b) => new Date(b.date) - new Date(a.date));
+
+      document.getElementById('home-activity-count').textContent = filteredFeed.length;
+
+      const listEl = document.getElementById('home-activity-list');
+      if (!filteredFeed.length) {
+        listEl.innerHTML = `
+          <div class="py-10 text-center space-y-1">
+            <p class="text-sm font-bold text-slate-600 dark:text-slate-300">No entries yet</p>
+            <p class="text-xs text-slate-400">Tap "Add Budget" or type an expense above to get started.</p>
+          </div>
+        `;
+        return;
+      }
+
+      listEl.innerHTML = filteredFeed.slice(0, 15).map(tx => {
+        const isRev = tx.type === 'revenue';
+        const isNoReceipt = (tx.proofType || '').toLowerCase().includes('walang') || (tx.proofType || '').toLowerCase().includes('no receipt');
+        const proofAvailable = hasReceiptProof(tx);
+        return `
+          <div class="py-3 flex items-center justify-between gap-3 group">
+            <div data-edit-id="${escapeHtml(tx.id)}" class="btn-edit-tx cursor-pointer flex items-center gap-3 min-w-0 flex-1">
+              <div class="w-9 h-9 rounded-2xl flex items-center justify-center shrink-0 ${isRev ? 'bg-emerald-50 text-emerald-600 dark:bg-emerald-950/70 dark:text-emerald-400' : isNoReceipt ? 'bg-amber-50 text-amber-600 dark:bg-amber-950/70 dark:text-amber-400' : 'bg-blue-50 text-blue-600 dark:bg-blue-950/70 dark:text-blue-400'}">
+                <i data-lucide="${isRev ? 'arrow-down-left' : isNoReceipt ? 'pen-line' : 'receipt'}" class="w-4 h-4"></i>
+              </div>
+              <div class="min-w-0">
+                <div class="flex items-center gap-1.5">
+                  <span class="text-xs sm:text-sm font-bold text-slate-900 dark:text-white truncate group-hover:text-emerald-600 dark:group-hover:text-emerald-400 transition">${escapeHtml(tx.entity)}</span>
+                </div>
+                <div class="text-[11px] text-slate-400 truncate">${escapeHtml(tx.notes || tx.category)} • ${formatShortDate(tx.date)}</div>
+              </div>
+            </div>
+
+            <div class="flex items-center gap-1.5 sm:gap-2 shrink-0">
+              ${proofAvailable ? `
+                <button type="button" data-view-proof-id="${escapeHtml(tx.id)}" class="btn-view-proof p-1.5 rounded-lg bg-blue-50 text-blue-600 hover:bg-blue-100 dark:bg-blue-950/70 dark:text-blue-400 transition" title="View Receipt Proof">
+                  <i data-lucide="file-image" class="w-3.5 h-3.5"></i>
+                </button>
+              ` : ''}
+              <span class="font-mono text-xs sm:text-sm font-extrabold ${isRev ? 'text-emerald-600 dark:text-emerald-400' : 'text-slate-900 dark:text-white'}">
+                ${isRev ? '+' : '-'}${formatPHP(tx.amount)}
+              </span>
+              <button type="button" data-edit-id="${escapeHtml(tx.id)}" class="btn-edit-tx p-1.5 rounded-lg text-slate-400 hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-950/50 transition" title="Edit">
+                <i data-lucide="pencil" class="w-3.5 h-3.5"></i>
+              </button>
+              <button type="button" data-delete-id="${escapeHtml(tx.id)}" class="btn-delete-tx p-1.5 rounded-lg text-slate-300 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/50 transition" title="Delete">
+                <i data-lucide="trash-2" class="w-3.5 h-3.5"></i>
+              </button>
+            </div>
+          </div>
+        `;
+      }).join('');
+    }
+
+    // =====================================================
+    // FIX 1: FIXED-CENTER DONUT & CUSTOM HTML LEGEND + CAPS
+    // =====================================================
+    function renderChartAndLegend() {
+      const scopedExpenses = filterByTimeframe(state.transactions.filter(t => t.type === 'expense'));
+      const totalScoped = scopedExpenses.reduce((s, t) => s + Number(t.amount), 0);
+
+      // Update center overlay text with dynamic font scaling so it never overlaps the ring
+      const centerTotalEl = document.getElementById('ring-center-total');
+      const centerSubEl = document.getElementById('ring-center-sub');
+      const formattedTotal = formatPHP(totalScoped);
+      centerTotalEl.textContent = formattedTotal;
+
+      if (formattedTotal.length >= 12) {
+        centerTotalEl.className = 'text-xs font-extrabold font-mono text-slate-900 dark:text-white leading-tight mt-0.5';
+      } else if (formattedTotal.length >= 10) {
+        centerTotalEl.className = 'text-sm font-extrabold font-mono text-slate-900 dark:text-white leading-tight mt-0.5';
+      } else {
+        centerTotalEl.className = 'text-base font-extrabold font-mono text-slate-900 dark:text-white leading-tight mt-0.5';
+      }
+
+      centerSubEl.textContent = `${scopedExpenses.length} expense${scopedExpenses.length === 1 ? '' : 's'}`;
+
+      // Aggregate by full category name
+      const totalsByCat = {};
+      scopedExpenses.forEach(e => {
+        const cat = e.category || 'Personal & Leisure';
+        totalsByCat[cat] = (totalsByCat[cat] || 0) + Number(e.amount);
+      });
+
+      // Also calculate current week spend per category for Weekly Category Limits
+      const thisMon = getMondayOfWeek(new Date());
+      const thisWeekByCat = {};
+      state.transactions.filter(t => t.type === 'expense').forEach(e => {
+        const d = new Date(e.date);
+        if (!isNaN(d.getTime()) && getMondayOfWeek(d).getTime() === thisMon.getTime()) {
+          const cat = e.category || 'Personal & Leisure';
+          thisWeekByCat[cat] = (thisWeekByCat[cat] || 0) + Number(e.amount);
+        }
+      });
+
+      const entries = Object.entries(totalsByCat).sort((a, b) => b[1] - a[1]);
+      const labels = entries.map(([cat]) => cat.split('&')[0].trim());
+      const values = entries.map(([, val]) => val);
+      const colors = entries.map(([cat]) => CATEGORY_COLORS[cat] || '#64748b');
+
+      // Render decoupled Chart.js donut (legend disabled inside canvas)
+      if (typeof Chart !== 'undefined') {
+        const canvas = document.getElementById('chart-expenses');
+        if (canvas) {
+          if (expenseChart) expenseChart.destroy();
+          expenseChart = new Chart(canvas.getContext('2d'), {
+            type: 'doughnut',
+            data: {
+              labels: labels.length ? labels : ['No Expenses'],
+              datasets: [{
+                data: values.length ? values : [1],
+                backgroundColor: values.length ? colors : [state.darkMode ? '#1e293b' : '#e2e8f0'],
+                borderWidth: 0,
+                hoverOffset: 4
+              }]
+            },
+            options: {
+              responsive: true,
+              maintainAspectRatio: true,
+              aspectRatio: 1,
+              cutout: '73%',
+              plugins: {
+                legend: { display: false },
+                tooltip: {
+                  enabled: values.length > 0,
+                  callbacks: {
+                    label: (ctx) => ` ${ctx.label}: ${formatPHP(ctx.parsed)}`
+                  }
+                }
+              }
+            }
+          });
+        }
+      }
+
+      // Render external HTML Legend with Category Weekly Cap progress
+      const legendContainer = document.getElementById('expense-legend-list');
+      if (!entries.length) {
+        legendContainer.innerHTML = `
+          <div class="py-6 text-center text-xs text-slate-400">
+            No expenses recorded in this timeframe.
+          </div>
+        `;
+        return;
+      }
+
+      legendContainer.innerHTML = entries.map(([cat, amount]) => {
+        const shortName = cat.split('&')[0].trim();
+        const dotColor = CATEGORY_COLORS[cat] || '#64748b';
+        const sharePct = totalScoped > 0 ? Math.round((amount / totalScoped) * 100) : 0;
+        const cap = Number(state.categoryLimits[cat]) || 0;
+        const wkSpend = thisWeekByCat[cat] || 0;
+
+        let capHtml = '';
+        if (cap > 0) {
+          const capPct = Math.min(100, Math.round((wkSpend / cap) * 100));
+          const rawPct = Math.round((wkSpend / cap) * 100);
+          const barColor = rawPct >= 100 ? 'bg-rose-500' : rawPct >= 80 ? 'bg-amber-500' : 'bg-emerald-500';
+          const badgeColor = rawPct >= 100 ? 'text-rose-600 dark:text-rose-400' : rawPct >= 80 ? 'text-amber-600 dark:text-amber-400' : 'text-slate-400';
+          capHtml = `
+            <div class="mt-1 space-y-0.5">
+              <div class="flex justify-between text-[10px] ${badgeColor} font-semibold">
+                <span>Wk cap: ${formatPHP(wkSpend)} / ${formatPHP(cap)}</span>
+                <span>${rawPct}%</span>
+              </div>
+              <div class="w-full h-1 bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden">
+                <div class="h-full ${barColor} rounded-full" style="width:${capPct}%"></div>
+              </div>
+            </div>
+          `;
+        }
+
+        return `
+          <div class="p-2 rounded-xl bg-slate-50/70 dark:bg-slate-800/40 border border-slate-100 dark:border-slate-800/80">
+            <div class="flex items-center justify-between gap-2 text-xs">
+              <div class="flex items-center gap-2 min-w-0">
+                <span class="w-2.5 h-2.5 rounded-full shrink-0" style="background-color: ${dotColor}"></span>
+                <span class="font-bold text-slate-800 dark:text-slate-200 truncate">${escapeHtml(shortName)}</span>
+                <span class="text-[10px] font-semibold text-slate-400">${sharePct}%</span>
+              </div>
+              <span class="font-mono font-extrabold text-slate-900 dark:text-white shrink-0">${formatPHP(amount)}</span>
+            </div>
+            ${capHtml}
+          </div>
+        `;
+      }).join('');
+    }
+
+    // =====================================================
+    // FEATURE 2: MULTI-WEEK EXPENSES BREAKDOWN & 2-WK STATS
+    // =====================================================
+    function renderWeeklyBreakdown() {
+      const expenses = state.transactions.filter(t => t.type === 'expense');
+      const now = new Date();
+
+      // Past 2 Weeks (Rolling 14-day total & weekly average)
+      const rolling14Start = new Date(now);
+      rolling14Start.setDate(now.getDate() - 13);
+      rolling14Start.setHours(0, 0, 0, 0);
+
+      const past2WTotal = expenses
+        .filter(e => {
+          const d = new Date(e.date);
+          return !isNaN(d.getTime()) && d.getTime() >= rolling14Start.getTime();
+        })
+        .reduce((s, e) => s + Number(e.amount), 0);
+
+      document.getElementById('past-2w-total').textContent = formatPHP(past2WTotal);
+      document.getElementById('past-2w-avg').textContent = `${formatPHP(past2WTotal / 2)}/wk`;
+
+      // Group expenses into Monday-Sunday calendar weeks
+      const weekMap = new Map();
+
+      // Pre-seed This Week, Last Week, and 2 Weeks Ago so users can always compare the past 3 weeks
+      const thisMon = getMondayOfWeek(now);
+      [0, 1, 2].forEach(offset => {
+        const m = new Date(thisMon);
+        m.setDate(thisMon.getDate() - offset * 7);
+        const key = formatWeekKey(m);
+        weekMap.set(key, { monday: m, items: [], total: 0 });
+      });
+
+      expenses.forEach(tx => {
+        const m = getMondayOfWeek(tx.date);
+        const key = formatWeekKey(m);
+        if (!weekMap.has(key)) {
+          weekMap.set(key, { monday: m, items: [], total: 0 });
+        }
+        const bucket = weekMap.get(key);
+        bucket.items.push(tx);
+        bucket.total += Number(tx.amount);
+      });
+
+      // Sort newest week first
+      const sortedWeeks = Array.from(weekMap.entries())
+        .sort((a, b) => b[1].monday.getTime() - a[1].monday.getTime());
+
+      const listContainer = document.getElementById('weekly-breakdown-list');
+      listContainer.innerHTML = sortedWeeks.map(([key, bucket], idx) => {
+        const { label, range } = getWeekLabelAndRange(bucket.monday);
+        const prevWeek = sortedWeeks[idx + 1] ? sortedWeeks[idx + 1][1] : null;
+        const isExpanded = state.expandedWeekKey === key;
+
+        // Top category in this week
+        const catTotals = {};
+        bucket.items.forEach(i => {
+          const shortCat = (i.category || 'Other').split('&')[0].trim();
+          catTotals[shortCat] = (catTotals[shortCat] || 0) + Number(i.amount);
+        });
+        const topCatEntry = Object.entries(catTotals).sort((a, b) => b[1] - a[1])[0];
+        const topCatText = topCatEntry ? `Top: ${topCatEntry[0]}` : 'No expenses';
+
+        // Week-over-Week Trend Badge
+        let deltaBadge = '';
+        if (prevWeek && (bucket.total > 0 || prevWeek.total > 0)) {
+          const diff = bucket.total - prevWeek.total;
+          if (Math.abs(diff) < 0.01) {
+            deltaBadge = `<span class="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-500">Same as prior wk</span>`;
+          } else if (diff < 0) {
+            deltaBadge = `<span class="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 dark:bg-emerald-950/70 dark:text-emerald-300">↓ ${formatPHP(Math.abs(diff))} less</span>`;
+          } else {
+            deltaBadge = `<span class="text-[10px] font-bold px-2 py-0.5 rounded-full bg-rose-50 text-rose-700 dark:bg-rose-950/70 dark:text-rose-300">↑ ${formatPHP(diff)} more</span>`;
+          }
+        }
+
+        const expandedHtml = isExpanded ? `
+          <div class="mt-3 pt-3 border-t border-slate-200/70 dark:border-slate-700/70 space-y-2">
+            ${bucket.items.length ? bucket.items
+              .sort((a, b) => new Date(b.date) - new Date(a.date))
+              .map(item => `
+                <div class="flex items-center justify-between gap-2 text-xs py-1.5 px-2.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800">
+                  <div class="min-w-0">
+                    <div class="font-bold text-slate-900 dark:text-white truncate">${escapeHtml(item.entity)}</div>
+                    <div class="text-[10px] text-slate-400">${formatShortDate(item.date)} • ${escapeHtml(item.notes || item.category)}</div>
+                  </div>
+                  <div class="flex items-center gap-1.5 shrink-0">
+                    ${hasReceiptProof(item) ? `
+                      <button type="button" data-view-proof-id="${escapeHtml(item.id)}" class="btn-view-proof p-1 rounded-lg text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-950/60" title="View Receipt">
+                        <i data-lucide="file-image" class="w-3.5 h-3.5"></i>
+                      </button>
+                    ` : ''}
+                    <span class="font-mono font-bold text-slate-800 dark:text-slate-200">-${formatPHP(item.amount)}</span>
+                    <button type="button" data-edit-id="${escapeHtml(item.id)}" class="btn-edit-tx p-1 rounded-lg text-slate-400 hover:text-blue-600" title="Edit">
+                      <i data-lucide="pencil" class="w-3 h-3"></i>
+                    </button>
+                  </div>
+                </div>
+              `).join('')
+              : `<p class="text-xs text-slate-400 text-center py-2">No expenses logged during this week.</p>`}
+          </div>
+        ` : '';
+
+        return `
+          <div class="rounded-2xl border ${isExpanded ? 'border-emerald-400/70 dark:border-emerald-700/70 bg-emerald-50/20 dark:bg-emerald-950/15' : 'border-slate-200/80 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-800/40'} p-3.5 transition">
+            <div data-week-key="${escapeHtml(key)}" class="btn-toggle-week cursor-pointer flex flex-wrap items-center justify-between gap-2">
+              <div class="space-y-0.5">
+                <div class="flex items-center gap-2 flex-wrap">
+                  <span class="text-xs sm:text-sm font-extrabold text-slate-900 dark:text-white">${escapeHtml(label)}</span>
+                  <span class="text-[11px] font-mono text-slate-400">${escapeHtml(range)}</span>
+                  ${deltaBadge}
+                </div>
+                <div class="text-[11px] text-slate-500 dark:text-slate-400">
+                  ${bucket.items.length} item${bucket.items.length === 1 ? '' : 's'} • ${escapeHtml(topCatText)}
+                </div>
+              </div>
+
+              <div class="flex items-center gap-2">
+                <span class="font-mono text-sm sm:text-base font-extrabold text-slate-900 dark:text-white">${formatPHP(bucket.total)}</span>
+                <i data-lucide="${isExpanded ? 'chevron-up' : 'chevron-down'}" class="w-4 h-4 text-slate-400"></i>
+              </div>
+            </div>
+            ${expandedHtml}
+          </div>
+        `;
+      }).join('');
+    }
+
+    // =====================================================
+    // RECOMMENDATION #6: RECURRING EXPENSES & BILL REMINDERS
+    // =====================================================
+    function renderRecurringList() {
+      const badge = document.getElementById('recurring-count-badge');
+      const container = document.getElementById('recurring-list');
+      badge.textContent = state.recurringItems.length;
+
+      if (!state.recurringItems.length) {
+        container.innerHTML = `
+          <div class="col-span-3 py-5 text-center text-xs text-slate-400">
+            No recurring bills saved. Tap "Add Recurring" for weekly load, rent, or commute passes.
+          </div>
+        `;
+        return;
+      }
+
+      const todayStr = todayDateStr(0);
+
+      container.innerHTML = state.recurringItems.map(item => {
+        const isDue = item.nextDueDate && item.nextDueDate <= todayStr;
+        const dueLabel = item.nextDueDate === todayStr
+          ? 'Due Today'
+          : item.nextDueDate < todayStr
+          ? `Overdue (${formatShortDate(item.nextDueDate)})`
+          : `Next: ${formatShortDate(item.nextDueDate)}`;
+
+        return `
+          <div class="p-3.5 rounded-2xl border ${isDue ? 'border-amber-300 dark:border-amber-800/80 bg-amber-50/40 dark:bg-amber-950/20' : 'border-slate-200/80 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-800/40'} flex flex-col justify-between gap-2.5">
+            <div class="flex items-start justify-between gap-2">
+              <div class="min-w-0">
+                <div class="text-xs font-extrabold text-slate-900 dark:text-white truncate">${escapeHtml(item.title)}</div>
+                <div class="flex items-center gap-1.5 mt-0.5">
+                  <span class="text-[10px] font-bold uppercase px-1.5 py-0.5 rounded bg-slate-200/70 dark:bg-slate-700 text-slate-600 dark:text-slate-300">${escapeHtml(item.frequency)}</span>
+                  <span class="text-[10px] font-semibold ${isDue ? 'text-amber-700 dark:text-amber-300' : 'text-slate-400'}">${escapeHtml(dueLabel)}</span>
+                </div>
+              </div>
+              <button type="button" data-del-rec-id="${escapeHtml(item.id)}" class="btn-del-recurring p-1 text-slate-300 hover:text-rose-600 transition" title="Remove">
+                <i data-lucide="x" class="w-3.5 h-3.5"></i>
+              </button>
+            </div>
+
+            <div class="flex items-center justify-between pt-1 border-t border-slate-200/60 dark:border-slate-700/60">
+              <span class="font-mono text-sm font-extrabold text-slate-900 dark:text-white">${formatPHP(item.amount)}</span>
+              <button type="button" data-log-rec-id="${escapeHtml(item.id)}" class="btn-log-recurring px-2.5 py-1 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-[11px] font-bold transition">
+                Log Now
+              </button>
+            </div>
+          </div>
+        `;
+      }).join('');
+    }
+
+    function renderHistory() {
+      const search = (document.getElementById('hist-search').value || '').toLowerCase().trim();
+      const typeFilter = document.getElementById('hist-type').value;
+      const proofFilter = document.getElementById('hist-proof').value;
+
+      const items = state.transactions.filter(t => {
+        if (typeFilter !== 'all' && t.type !== typeFilter) return false;
+        const isNoOR = (t.proofType || '').toLowerCase().includes('walang') || (t.proofType || '').toLowerCase().includes('no receipt');
+        if (proofFilter === 'receipted' && isNoOR) return false;
+        if (proofFilter === 'unreceipted' && !isNoOR) return false;
+        if (search) {
+          const hay = `${t.entity} ${t.category} ${t.notes} ${t.refNo}`.toLowerCase();
+          if (!hay.includes(search)) return false;
+        }
+        return true;
+      }).sort((a, b) => new Date(b.date) - new Date(a.date));
+
+      const timelineEl = document.getElementById('hist-timeline-view');
+      const groupedEl = document.getElementById('hist-grouped-view');
+
+      if (state.histView === 'timeline') {
+        timelineEl.classList.remove('hidden');
+        groupedEl.classList.add('hidden');
+
+        if (!items.length) {
+          timelineEl.innerHTML = `<div class="bg-white dark:bg-slate-900 rounded-3xl p-8 text-center text-xs text-slate-400 border border-slate-200/80 dark:border-slate-800">No matching transactions found.</div>`;
+          return;
+        }
+
+        timelineEl.innerHTML = `
+          <div class="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200/80 dark:border-slate-800 divide-y divide-slate-100 dark:divide-slate-800 soft-card">
+            ${items.map(tx => {
+              const isRev = tx.type === 'revenue';
+              const proofAvailable = hasReceiptProof(tx);
+              return `
+                <div class="p-4 flex items-center justify-between gap-3">
+                  <div data-edit-id="${escapeHtml(tx.id)}" class="btn-edit-tx cursor-pointer min-w-0 space-y-0.5 flex-1">
+                    <div class="flex items-center gap-2 flex-wrap">
+                      <span class="text-xs sm:text-sm font-bold text-slate-900 dark:text-white">${escapeHtml(tx.entity)}</span>
+                      <span class="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300">${escapeHtml(tx.category)}</span>
+                      <span class="text-[10px] font-medium text-slate-400">${escapeHtml(tx.proofType)}</span>
+                    </div>
+                    <p class="text-xs text-slate-500 dark:text-slate-400 truncate">${escapeHtml(tx.notes)}</p>
+                    <div class="text-[10px] font-mono text-slate-400">${formatShortDate(tx.date)} • ${escapeHtml(tx.refNo || '')}</div>
+                  </div>
+                  <div class="flex items-center gap-2 shrink-0">
+                    ${proofAvailable ? `
+                      <button type="button" data-view-proof-id="${escapeHtml(tx.id)}" class="btn-view-proof p-1.5 rounded-lg bg-blue-50 text-blue-600 hover:bg-blue-100 dark:bg-blue-950/70 dark:text-blue-400 transition" title="View Receipt Proof">
+                        <i data-lucide="file-image" class="w-4 h-4"></i>
+                      </button>
+                    ` : ''}
+                    <span class="font-mono text-sm font-extrabold ${isRev ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'}">
+                      ${isRev ? '+' : '-'}${formatPHP(tx.amount)}
+                    </span>
+                    <button type="button" data-edit-id="${escapeHtml(tx.id)}" class="btn-edit-tx p-1.5 rounded-lg text-slate-400 hover:text-blue-600 transition" title="Edit">
+                      <i data-lucide="pencil" class="w-4 h-4"></i>
+                    </button>
+                    <button type="button" data-delete-id="${escapeHtml(tx.id)}" class="btn-delete-tx p-1.5 rounded-lg text-slate-300 hover:text-rose-600 transition" title="Delete">
+                      <i data-lucide="trash-2" class="w-4 h-4"></i>
+                    </button>
+                  </div>
+                </div>
+              `;
+            }).join('')}
+          </div>
+        `;
+      } else {
+        timelineEl.classList.add('hidden');
+        groupedEl.classList.remove('hidden');
+
+        const groups = {};
+        items.forEach(tx => {
+          const key = `${tx.type === 'revenue' ? '+' : '-'} ${tx.category}`;
+          if (!groups[key]) groups[key] = { isRev: tx.type === 'revenue', label: tx.category, list: [] };
+          groups[key].list.push(tx);
+        });
+
+        groupedEl.innerHTML = Object.values(groups).map(g => {
+          const sum = g.list.reduce((s, x) => s + Number(x.amount), 0);
+          return `
+            <div class="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200/80 dark:border-slate-800 p-5 soft-card space-y-2.5">
+              <div class="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-2">
+                <span class="text-xs font-extrabold text-slate-900 dark:text-white">${escapeHtml(g.label)} (${g.list.length})</span>
+                <span class="font-mono text-xs font-extrabold ${g.isRev ? 'text-emerald-600' : 'text-rose-600'}">${g.isRev ? '+' : '-'}${formatPHP(sum)}</span>
+              </div>
+              <div class="space-y-1.5">
+                ${g.list.map(item => `
+                  <div class="flex justify-between text-xs text-slate-600 dark:text-slate-300">
+                    <span class="truncate pr-2">${escapeHtml(item.entity)} — ${escapeHtml(item.notes)}</span>
+                    <span class="font-mono font-semibold shrink-0">${formatPHP(item.amount)}</span>
+                  </div>
+                `).join('')}
+              </div>
+            </div>
+          `;
+        }).join('') || `<div class="col-span-2 bg-white dark:bg-slate-900 rounded-3xl p-8 text-center text-xs text-slate-400">No items to group.</div>`;
+      }
+    }
+
+    function renderLiquidation() {
+      const expenses = state.transactions
+        .filter(t => t.type === 'expense')
+        .sort((a, b) => new Date(a.date) - new Date(b.date));
+
+      const checklistEl = document.getElementById('liq-checklist');
+      checklistEl.innerHTML = expenses.map(e => `
+        <label class="flex items-center gap-2 p-2.5 rounded-xl border border-slate-200/80 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-800/50 cursor-pointer text-xs">
+          <input type="checkbox" data-liq-id="${escapeHtml(e.id)}" class="liq-check rounded text-emerald-600" ${e.selectedForLiq ? 'checked' : ''} />
+          <span class="truncate flex-1 font-semibold text-slate-800 dark:text-slate-200">${escapeHtml(e.entity)}</span>
+          <span class="font-mono font-bold text-slate-600 dark:text-slate-300">${formatPHP(e.amount)}</span>
+        </label>
+      `).join('');
+
+      const selected = expenses.filter(e => e.selectedForLiq);
+      const totalSelected = selected.reduce((s, e) => s + Number(e.amount), 0);
+      const advance = Number(document.getElementById('liq-advance').value) || 0;
+      const variance = advance - totalSelected;
+
+      const sender = document.getElementById('liq-sender').value || 'Alex Santos';
+      const recipient = document.getElementById('liq-recipient').value || 'Dr. Maria Elena Reyes';
+
+      document.getElementById('sig-prepared').textContent = sender;
+      document.getElementById('sig-approved').textContent = recipient.split(',')[0].trim();
+
+      document.getElementById('liq-voucher-tbody').innerHTML = selected.map(e => `
+        <tr>
+          <td class="py-2 pr-2 font-mono text-[11px]">${escapeHtml((e.date || '').slice(0, 10))}</td>
+          <td class="py-2 px-2 font-mono text-[11px]">${escapeHtml(e.refNo || 'NO-OR')}</td>
+          <td class="py-2 px-2">
+            <div class="font-bold text-slate-900 dark:text-white">${escapeHtml(e.entity)}</div>
+            <div class="text-[11px] text-slate-500">${escapeHtml(e.notes)}</div>
+          </td>
+          <td class="py-2 px-2 no-print">
+            ${hasReceiptProof(e) ? `
+              <button type="button" data-view-proof-id="${escapeHtml(e.id)}" class="btn-view-proof inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-blue-50 text-blue-600 dark:bg-blue-950/70 dark:text-blue-300 text-[10px] font-bold">
+                <i data-lucide="eye" class="w-3 h-3"></i>
+                <span>Proof</span>
+              </button>
+            ` : `<span class="text-[10px] text-slate-400">No-OR</span>`}
+          </td>
+          <td class="py-2 pl-2 text-right font-mono font-bold">${formatPHP(e.amount)}</td>
+        </tr>
+      `).join('') || `<tr><td colspan="5" class="py-4 text-center text-slate-400">Select expenses above to include in voucher.</td></tr>`;
+
+      document.getElementById('liq-voucher-tfoot').innerHTML = `
+        <tr>
+          <td colspan="4" class="pt-3 text-right pr-3">Total Expenses:</td>
+          <td class="pt-3 text-right font-mono text-rose-600">${formatPHP(totalSelected)}</td>
+        </tr>
+        <tr>
+          <td colspan="4" class="py-1 text-right pr-3 text-slate-500">Cash Advance:</td>
+          <td class="py-1 text-right font-mono text-emerald-600">${formatPHP(advance)}</td>
+        </tr>
+        <tr>
+          <td colspan="4" class="pt-2 text-right pr-3">${variance >= 0 ? 'Unspent Balance to Return:' : 'Reimbursement Due:'}</td>
+          <td class="pt-2 text-right font-mono font-extrabold">${formatPHP(Math.abs(variance))}</td>
+        </tr>
+      `;
+
+      const noOrItems = selected.filter(e => (e.proofType || '').toLowerCase().includes('walang') || (e.proofType || '').toLowerCase().includes('no receipt'));
+      const certNote = document.getElementById('liq-cert-note');
+      if (noOrItems.length) {
+        const noOrSum = noOrItems.reduce((s, e) => s + Number(e.amount), 0);
+        certNote.classList.remove('hidden');
+        certNote.textContent = `Includes ${noOrItems.length} unreceipted micro-expense(s) totaling ${formatPHP(noOrSum)} certified as actual official disbursements.`;
+      } else {
+        certNote.classList.add('hidden');
+      }
+
+      const lines = selected.map(e => `• ${(e.date || '').slice(0, 10)} — ${e.entity}: ${formatPHP(e.amount)} (${e.notes})`).join('\n');
+      document.getElementById('liq-email-output').textContent =
+`Subject: Liquidation Report — ${formatPHP(totalSelected)} Total Expenses
+
+Dear ${recipient},
+
+Please find below the itemized liquidation summary of official expenses totaling ${formatPHP(totalSelected)}:
+
+${lines || '• (No items selected)'}
+
+Summary:
+• Total Liquidated: ${formatPHP(totalSelected)}
+• Cash Advance: ${formatPHP(advance)}
+• ${variance >= 0 ? 'Excess Cash to Return' : 'Reimbursement Due'}: ${formatPHP(Math.abs(variance))}
+
+Thank you very much for your review and approval.
+
+Sincerely,
+${sender}`;
+    }
+
+    function renderAmbagan() {
+      const selectEl = document.getElementById('ambagan-pick-expense');
+      const currentVal = selectEl.value;
+      const expenses = state.transactions.filter(t => t.type === 'expense');
+      selectEl.innerHTML = `<option value="">-- Custom Bill or Pick Expense --</option>` +
+        expenses.map(e => `<option value="${escapeHtml(e.id)}">${escapeHtml(e.entity)} (${formatPHP(e.amount)})</option>`).join('');
+      if (expenses.some(e => e.id === currentVal)) selectEl.value = currentVal;
+
+      document.getElementById('ambagan-title').value = state.ambaganTitle;
+      document.getElementById('ambagan-total').value = state.ambaganTotal;
+
+      const count = Math.max(1, state.ambaganMembers.length);
+      const share = Number(state.ambaganTotal) / count;
+      document.getElementById('ambagan-share-val').textContent = formatPHP(share);
+
+      const paidCount = state.ambaganMembers.filter(m => m.paid).length;
+      document.getElementById('ambagan-paid-badge').textContent = `${paidCount} of ${count} Paid`;
+
+      document.getElementById('ambagan-list').innerHTML = state.ambaganMembers.map(m => `
+        <div class="p-3 rounded-2xl border border-slate-200/80 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-800/40 flex items-center justify-between gap-2">
+          <label class="flex items-center gap-2.5 cursor-pointer">
+            <input type="checkbox" data-member-id="${escapeHtml(m.id)}" class="ambagan-paid-toggle w-4 h-4 rounded text-emerald-600" ${m.paid ? 'checked' : ''} />
+            <div>
+              <div class="text-xs sm:text-sm font-bold text-slate-900 dark:text-white">${escapeHtml(m.name)}</div>
+              <div class="text-[11px] font-mono text-slate-500">${formatPHP(share)}</div>
+            </div>
+          </label>
+          <div class="flex items-center gap-2">
+            ${m.paid && !m.credited ? `
+              <button type="button" data-credit-id="${escapeHtml(m.id)}" class="btn-ambagan-credit px-2.5 py-1 rounded-lg bg-emerald-600 text-white text-[11px] font-bold">
+                + Add to Budget
+              </button>
+            ` : m.credited ? `<span class="text-[11px] font-bold text-emerald-600">✓ Added</span>` : `<span class="text-[11px] text-amber-600 font-semibold">Pending</span>`}
+            <button type="button" data-remove-id="${escapeHtml(m.id)}" class="btn-ambagan-remove p-1 text-slate-400 hover:text-rose-600">
+              <i data-lucide="x" class="w-4 h-4"></i>
+            </button>
+          </div>
+        </div>
+      `).join('');
+    }
+
+    function updateDataModalSummary() {
+      const el = document.getElementById('data-storage-summary');
+      if (el) {
+        const count = state.transactions.length;
+        el.textContent = `${count} transaction${count === 1 ? '' : 's'} saved automatically in your browser`;
+      }
+    }
+
+    // =====================================================
+    // 4. IMAGE COMPRESSION (RECEIPT VAULT), OCR & PARSER
+    // =====================================================
+    function compressReceiptThumbnail(dataUrl, maxWidth = 640, quality = 0.68) {
+      return new Promise((resolve) => {
+        const img = new Image();
+        img.onload = () => {
+          try {
+            let w = img.naturalWidth || img.width || 600;
+            let h = img.naturalHeight || img.height || 800;
+            if (w > maxWidth) {
+              h = Math.round((h * maxWidth) / w);
+              w = maxWidth;
+            }
+            const canvas = document.createElement('canvas');
+            canvas.width = w;
+            canvas.height = h;
+            const ctx = canvas.getContext('2d');
+            ctx.fillStyle = '#ffffff';
+            ctx.fillRect(0, 0, w, h);
+            ctx.drawImage(img, 0, 0, w, h);
+            resolve(canvas.toDataURL('image/jpeg', quality));
+          } catch (err) {
+            resolve(dataUrl);
+          }
+        };
+        img.onerror = () => resolve(dataUrl);
+        img.src = dataUrl;
+      });
+    }
+
+    function classifyCategory(text) {
+      const t = (text || '').toLowerCase();
+      if (/(tricycle|jeep|bus|lrt|mrt|grab|angkas|joyride|fare|pamasahe|commute|gas|parking)/.test(t)) {
+        return 'Transportation & Commute';
+      }
+      if (/(photocopy|xerox|print|handout|blue book|index card|notebook|pen|marker|folder|thesis|book|school|national book)/.test(t)) {
+        return 'Academic & School Supplies';
+      }
+      if (/(karinderya|lunch|dinner|breakfast|snack|jollibee|mcdo|coffee|starbucks|water|banana cue|siomai|rice|meal|food|canteen|mang inasal|chowking|kfc|grocery|7-eleven)/.test(t)) {
+        return 'Food & Dining';
+      }
+      if (/(load|data|globe|smart|dito|wifi|internet|electric|meralco|water bill|subscription)/.test(t)) {
+        return 'Bills, Load & Subscriptions';
+      }
+      if (/(classroom|office|seminar|org)/.test(t)) {
+        return 'Work & Classroom Supplies';
+      }
+      return 'Personal & Leisure';
+    }
+
+    function checkCategoryCapAlert(category) {
+      const cap = Number(state.categoryLimits[category]) || 0;
+      if (!cap) return;
+      const thisMon = getMondayOfWeek(new Date());
+      const wkTotal = state.transactions
+        .filter(t => t.type === 'expense' && t.category === category)
+        .filter(t => {
+          const d = new Date(t.date);
+          return !isNaN(d.getTime()) && getMondayOfWeek(d).getTime() === thisMon.getTime();
+        })
+        .reduce((s, t) => s + Number(t.amount), 0);
+
+      const pct = Math.round((wkTotal / cap) * 100);
+      if (pct >= 100) {
+        showToast(`Weekly Cap Reached (${pct}%)`, `${category}: ${formatPHP(wkTotal)} / ${formatPHP(cap)}`, 'rose');
+      } else if (pct >= 80) {
+        showToast(`Approaching Weekly Cap (${pct}%)`, `${category}: ${formatPHP(wkTotal)} / ${formatPHP(cap)}`, 'amber');
+      }
+    }
+
+    function parseAndAddQuickExpense(rawInput) {
+      const text = (rawInput || '').trim();
+      if (!text) return;
+
+      const normalized = text.replace(/(\d),(\d{3})\b/g, '$1$2');
+      const parts = normalized.split(/,|;|\n|\band\b|\bplus\b/i).map(s => s.trim()).filter(Boolean);
+      const added = [];
+      const touchedCats = new Set();
+
+      parts.forEach((seg, idx) => {
+        const withoutQty = seg.replace(/\b\d+\s*(?:x|pcs?|pieces?|packs?|orders?)\b/gi, ' ');
+        const match = withoutQty.match(/(?:₱|php)?\s*(\d+(?:\.\d{1,2})?)/i);
+        if (!match) return;
+        const amount = parseFloat(match[1]);
+        if (!Number.isFinite(amount) || amount <= 0) return;
+
+        const desc = seg
+          .replace(/(?:₱|php)?\s*\d+(?:\.\d{1,2})?\s*(?:pesos?|php)?/gi, '')
+          .replace(/\b(for|worth|paid|spent)\b/gi, '')
+          .replace(/\s{2,}/g, ' ')
+          .trim() || 'Daily Expense';
+
+        const title = desc.charAt(0).toUpperCase() + desc.slice(1);
+        const category = classifyCategory(desc);
+        touchedCats.add(category);
+
+        state.transactions.unshift({
+          id: 'tx-' + Date.now() + '-' + idx,
+          type: 'expense',
+          amount: amount,
+          date: nowLocalISO(),
+          entity: title,
+          category: category,
+          proofType: 'Walang Resibo',
+          refNo: 'NO-OR',
+          notes: seg,
+          selectedForLiq: category.includes('Supplies') || category.includes('Transport')
+        });
+        added.push(`${title} (${formatPHP(amount)})`);
+      });
+
+      if (!added.length) {
+        showToast('Include an amount', 'Example: "Lunch 85, Tricycle 35"', 'rose');
+        return;
+      }
+
+      state.isDemoData = false;
+      saveState();
+      renderAll();
+      showToast(`Added ${added.length} expense${added.length > 1 ? 's' : ''}`, added.join(' • '), 'emerald');
+      touchedCats.forEach(cat => checkCategoryCapAlert(cat));
+    }
+
+    async function runReceiptOCR(dataUrl, onProgress) {
+      if (typeof Tesseract === 'undefined' || !Tesseract.recognize) {
+        throw new Error('OCR unavailable');
+      }
+      const ocrPromise = Tesseract.recognize(dataUrl, 'eng', {
+        workerBlobURL: true,
+        logger: m => {
+          if (onProgress && m && typeof m.progress === 'number') {
+            onProgress(Math.round(m.progress * 100));
+          }
+        }
+      });
+      const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout')), 11000));
+      const res = await Promise.race([ocrPromise, timeoutPromise]);
+      return res && res.data && res.data.text ? res.data.text : '';
+    }
+
+    function parseOcrText(rawText, fallbackName) {
+      const lines = (rawText || '').split('\n').map(l => l.trim()).filter(Boolean);
+      let merchant = fallbackName || 'Scanned Receipt';
+      for (const line of lines.slice(0, 5)) {
+        const clean = line.replace(/[^A-Za-z0-9 .,&'-]/g, '').trim();
+        if (clean.length >= 3 && !/^(OFFICIAL|SALES|VAT|TIN|RECEIPT|INVOICE|DATE)/i.test(clean)) {
+          merchant = clean;
+          break;
+        }
+      }
+
+      let bestAmount = null;
+      lines.forEach(line => {
+        if (/(SUBTOTAL|VAT|CHANGE|CASH|TIN|MIN|TEL)/i.test(line)) return;
+        const nums = line.match(/\d{1,3}(?:,\d{3})*(?:\.\d{2})/g);
+        if (nums) {
+          const val = parseFloat(nums[nums.length - 1].replace(/,/g, ''));
+          if (Number.isFinite(val) && val > 0 && val < 200000) {
+            if (/(TOTAL|AMOUNT|DUE|PAID|SENT)/i.test(line) || bestAmount === null || val > bestAmount) {
+              bestAmount = val;
+            }
+          }
+        }
+      });
+
+      const isGcash = /(GCASH|EXPRESS SEND|MAYA)/i.test(rawText || '');
+      const refMatch = (rawText || '').match(/(?:REF|OR|SI|INVOICE)\s*(?:NO\.?|#|:)?\s*([A-Z0-9-]{4,18})/i);
+
+      return {
+        merchant,
+        amount: bestAmount,
+        ref: refMatch ? refMatch[1] : (isGcash ? 'GC-' : 'OR-') + Math.floor(100000 + Math.random() * 900000),
+        proofType: isGcash ? 'GCash / Maya' : 'Official Receipt (OR)',
+        category: classifyCategory(`${merchant} ${rawText}`),
+        items: `Scanned receipt from ${merchant}`
+      };
+    }
+
+    async function openReceiptModalWithFile(file) {
+      const modal = document.getElementById('modal-verify-scan');
+      const beam = document.getElementById('verify-scan-beam');
+      const imgEl = document.getElementById('verify-scan-img');
+      const demoHtmlEl = document.getElementById('verify-scan-demo-html');
+      const placeholder = document.getElementById('verify-scan-placeholder');
+      const statusEl = document.getElementById('verify-scan-status');
+      const pctEl = document.getElementById('verify-scan-pct');
+      const barEl = document.getElementById('verify-scan-bar');
+
+      pendingScannedImage = null;
+      modal.classList.remove('hidden');
+      beam.classList.remove('hidden');
+      demoHtmlEl.classList.add('hidden');
+      placeholder.classList.add('hidden');
+      statusEl.textContent = 'Reading receipt...';
+      pctEl.textContent = '15%';
+      barEl.style.width = '15%';
+
+      const dataUrl = await new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = e => resolve(e.target.result);
+        reader.onerror = reject;
+        reader.readAsDataURL(file);
+      });
+
+      // Compress and store thumbnail for the Receipt Proof Vault
+      pendingScannedImage = await compressReceiptThumbnail(dataUrl, 640, 0.68);
+
+      imgEl.src = pendingScannedImage;
+      imgEl.classList.remove('hidden');
+
+      const baseName = file.name.replace(/\.[^\/.]+$/, '').replace(/[-_]+/g, ' ').trim();
+      document.getElementById('scan-merchant').value = baseName || 'Receipt';
+      document.getElementById('scan-amount').value = '';
+      document.getElementById('scan-date').value = nowLocalISO();
+      document.getElementById('scan-items').value = `Receipt: ${baseName}`;
+
+      try {
+        const text = await runReceiptOCR(dataUrl, pct => {
+          const p = Math.max(20, pct);
+          pctEl.textContent = `${p}%`;
+          barEl.style.width = `${p}%`;
+        });
+        const parsed = parseOcrText(text, baseName);
+        beam.classList.add('hidden');
+        pctEl.textContent = '100%';
+        barEl.style.width = '100%';
+
+        document.getElementById('scan-merchant').value = parsed.merchant;
+        document.getElementById('scan-amount').value = parsed.amount !== null ? parsed.amount.toFixed(2) : '';
+        document.getElementById('scan-ref').value = parsed.ref;
+        document.getElementById('scan-proof').value = parsed.proofType;
+        document.getElementById('scan-category').value = parsed.category;
+        document.getElementById('scan-items').value = parsed.items;
+
+        if (parsed.amount !== null) {
+          statusEl.textContent = `Detected ${formatPHP(parsed.amount)}`;
+        } else {
+          statusEl.textContent = 'Enter total amount below';
+          document.getElementById('scan-amount').focus();
+        }
+      } catch (e) {
+        beam.classList.add('hidden');
+        pctEl.textContent = '100%';
+        barEl.style.width = '100%';
+        statusEl.textContent = 'Enter total amount below';
+        document.getElementById('scan-amount').focus();
+      }
+    }
+
+    function openReceiptModalWithDemo(key) {
+      const demo = DEMO_RECEIPTS[key];
+      if (!demo) return;
+      pendingScannedImage = null;
+      const modal = document.getElementById('modal-verify-scan');
+      const beam = document.getElementById('verify-scan-beam');
+      const imgEl = document.getElementById('verify-scan-img');
+      const demoHtmlEl = document.getElementById('verify-scan-demo-html');
+      const placeholder = document.getElementById('verify-scan-placeholder');
+
+      modal.classList.remove('hidden');
+      beam.classList.add('hidden');
+      imgEl.classList.add('hidden');
+      placeholder.classList.add('hidden');
+      demoHtmlEl.innerHTML = demo.previewHtml;
+      demoHtmlEl.classList.remove('hidden');
+      demoHtmlEl.setAttribute('data-demo-key', key);
+
+      document.getElementById('verify-scan-status').textContent = `Sample detected: ${formatPHP(demo.amount)}`;
+      document.getElementById('verify-scan-pct').textContent = '100%';
+      document.getElementById('verify-scan-bar').style.width = '100%';
+
+      document.getElementById('scan-merchant').value = demo.merchant;
+      document.getElementById('scan-amount').value = demo.amount.toFixed(2);
+      document.getElementById('scan-ref').value = demo.ref;
+      document.getElementById('scan-proof').value = demo.proofType;
+      document.getElementById('scan-category').value = demo.category;
+      document.getElementById('scan-items').value = demo.items;
+      document.getElementById('scan-date').value = nowLocalISO();
+    }
+
+    // =====================================================
+    // 5. MODAL OPENERS (EDIT TX, PROOF VAULT, CAPS)
+    // =====================================================
+    function openEditTransactionModal(txId) {
+      const tx = state.transactions.find(t => t.id === txId);
+      if (!tx) return;
+      pendingEditImage = null;
+
+      document.getElementById('edit-tx-id').value = tx.id;
+      document.getElementById('edit-tx-amount').value = Number(tx.amount).toFixed(2);
+      document.getElementById('edit-tx-date').value = (tx.date || nowLocalISO()).slice(0, 16);
+      document.getElementById('edit-tx-entity').value = tx.entity || '';
+      document.getElementById('edit-tx-category').value = tx.category || 'Food & Dining';
+      document.getElementById('edit-tx-proof').value = tx.proofType || 'Walang Resibo';
+      document.getElementById('edit-tx-ref').value = tx.refNo || '';
+      document.getElementById('edit-tx-notes').value = tx.notes || '';
+      document.getElementById('edit-tx-photo-label').textContent = tx.receiptImage ? 'Replace Photo' : 'Choose Image';
+
+      setEditModalType(tx.type || 'expense');
+      document.getElementById('modal-edit-tx').classList.remove('hidden');
+      if (typeof lucide !== 'undefined' && lucide.createIcons) lucide.createIcons();
+    }
+
+    function setEditModalType(type) {
+      document.getElementById('edit-tx-type').value = type;
+      const btnExp = document.getElementById('btn-edit-type-expense');
+      const btnRev = document.getElementById('btn-edit-type-revenue');
+      if (type === 'expense') {
+        btnExp.className = 'py-1.5 rounded-lg text-xs font-bold bg-rose-600 text-white shadow-sm';
+        btnRev.className = 'py-1.5 rounded-lg text-xs font-bold text-slate-600 dark:text-slate-300';
+      } else {
+        btnRev.className = 'py-1.5 rounded-lg text-xs font-bold bg-emerald-600 text-white shadow-sm';
+        btnExp.className = 'py-1.5 rounded-lg text-xs font-bold text-slate-600 dark:text-slate-300';
+      }
+    }
+
+    function openReceiptProofViewer(txId) {
+      const tx = state.transactions.find(t => t.id === txId);
+      if (!tx || !hasReceiptProof(tx)) return;
+
+      const modal = document.getElementById('modal-receipt-viewer');
+      const imgEl = document.getElementById('viewer-img');
+      const slipEl = document.getElementById('viewer-slip-html');
+      const dlBtn = document.getElementById('btn-viewer-download');
+
+      document.getElementById('viewer-merchant').textContent = tx.entity;
+      document.getElementById('viewer-meta').textContent = `${formatShortDate(tx.date)} • ${tx.proofType} (${tx.refNo || 'N/A'})`;
+      document.getElementById('viewer-amount').textContent = formatPHP(tx.amount);
+
+      if (tx.receiptImage) {
+        imgEl.src = tx.receiptImage;
+        imgEl.classList.remove('hidden');
+        slipEl.classList.add('hidden');
+        dlBtn.classList.remove('hidden');
+        dlBtn.setAttribute('data-dl-src', tx.receiptImage);
+        dlBtn.setAttribute('data-dl-name', `${(tx.entity || 'receipt').replace(/[^a-z0-9]/gi, '_').toLowerCase()}.jpg`);
+      } else if (tx.demoReceiptKey && DEMO_RECEIPTS[tx.demoReceiptKey]) {
+        imgEl.classList.add('hidden');
+        slipEl.innerHTML = DEMO_RECEIPTS[tx.demoReceiptKey].previewHtml;
+        slipEl.classList.remove('hidden');
+        dlBtn.classList.add('hidden');
+      }
+
+      modal.classList.remove('hidden');
+    }
+
+    function openCategoryLimitsModal() {
+      const form = document.getElementById('form-category-limits');
+      const thisMon = getMondayOfWeek(new Date());
+      const wkByCat = {};
+      state.transactions.filter(t => t.type === 'expense').forEach(e => {
+        const d = new Date(e.date);
+        if (!isNaN(d.getTime()) && getMondayOfWeek(d).getTime() === thisMon.getTime()) {
+          wkByCat[e.category] = (wkByCat[e.category] || 0) + Number(e.amount);
+        }
+      });
+
+      form.innerHTML = EXPENSE_CATEGORIES.map(cat => {
+        const currentCap = Number(state.categoryLimits[cat]) || '';
+        const wkSpent = wkByCat[cat] || 0;
+        const dotColor = CATEGORY_COLORS[cat] || '#64748b';
+        return `
+          <div class="p-3 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200/80 dark:border-slate-700/80 flex items-center justify-between gap-3">
+            <div class="min-w-0">
+              <div class="flex items-center gap-2">
+                <span class="w-2.5 h-2.5 rounded-full shrink-0" style="background-color:${dotColor}"></span>
+                <span class="text-xs font-bold text-slate-900 dark:text-white truncate">${escapeHtml(cat)}</span>
+              </div>
+              <div class="text-[11px] text-slate-400 mt-0.5">This week: <span class="font-mono font-semibold">${formatPHP(wkSpent)}</span></div>
+            </div>
+            <div class="flex items-center gap-1 w-28 shrink-0">
+              <span class="text-xs font-mono text-slate-400">₱</span>
+              <input type="number" step="50" min="0" data-cap-cat="${escapeHtml(cat)}" value="${currentCap}" placeholder="No cap" class="cap-input w-full px-2.5 py-1.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs font-mono font-bold text-right outline-none focus:ring-2 focus:ring-emerald-500" />
+            </div>
+          </div>
+        `;
+      }).join('');
+
+      document.getElementById('modal-category-limits').classList.remove('hidden');
+    }
+
+    // =====================================================
+    // 6. NAVIGATION & EVENT WIRING
+    // =====================================================
+    function switchTab(tabName) {
+      document.querySelectorAll('.tab-panel').forEach(p => p.classList.add('hidden'));
+      const activePanel = document.getElementById('tab-' + tabName);
+      if (activePanel) activePanel.classList.remove('hidden');
+
+      document.querySelectorAll('.nav-tab-btn').forEach(btn => {
+        const active = btn.getAttribute('data-tab') === tabName;
+        btn.className = active
+          ? 'nav-tab-btn px-3.5 py-1.5 rounded-lg text-xs font-bold bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-sm transition flex items-center gap-1.5'
+          : 'nav-tab-btn px-3.5 py-1.5 rounded-lg text-xs font-semibold text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white transition flex items-center gap-1.5';
+      });
+
+      document.querySelectorAll('.mobile-nav-btn').forEach(btn => {
+        const active = btn.getAttribute('data-tab') === tabName;
+        btn.className = active
+          ? 'mobile-nav-btn flex flex-col items-center justify-center py-1 text-emerald-600 dark:text-emerald-400 font-bold text-[11px]'
+          : 'mobile-nav-btn flex flex-col items-center justify-center py-1 text-slate-500 dark:text-slate-400 font-medium text-[11px]';
+      });
+
+      if (tabName === 'home') renderChartAndLegend();
+    }
+
+    function applyTheme() {
+      const html = document.documentElement;
+      const moon = document.getElementById('theme-icon-moon');
+      const sun = document.getElementById('theme-icon-sun');
+      if (state.darkMode) {
+        html.classList.add('dark');
+        moon.classList.add('hidden');
+        sun.classList.remove('hidden');
+      } else {
+        html.classList.remove('dark');
+        moon.classList.remove('hidden');
+        sun.classList.add('hidden');
+      }
+    }
+
+    window.addEventListener('DOMContentLoaded', () => {
+      loadState();
+      applyTheme();
+      renderAll();
+
+      // Tab Navigation
+      document.querySelectorAll('[data-tab]').forEach(btn => {
+        btn.addEventListener('click', () => switchTab(btn.getAttribute('data-tab')));
+      });
+
+      // Theme Toggle
+      document.getElementById('btn-theme-toggle').addEventListener('click', () => {
+        state.darkMode = !state.darkMode;
+        applyTheme();
+        saveState();
+        renderChartAndLegend();
+      });
+
+      // Sample Banner Actions
+      document.getElementById('btn-banner-start-fresh').addEventListener('click', () => {
+        state.transactions = [];
+        state.recurringItems = [];
+        state.ambaganMembers = [{ id: 'm1', name: 'You', paid: true, credited: false }];
+        state.savingsGoal = 0;
+        state.categoryLimits = {};
+        state.isDemoData = false;
+        state.bannerDismissed = true;
+        saveState();
+        renderAll();
+        showToast('Fresh Ledger Ready', 'Your balance is ₱0.00. Add your budget to begin!');
+      });
+
+      document.getElementById('btn-banner-dismiss').addEventListener('click', () => {
+        state.bannerDismissed = true;
+        saveState();
+        updateBannerVisibility();
+      });
+
+      // Multi-Week & Period Timeframe Filters
+      document.querySelectorAll('.timeframe-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+          state.timeframe = btn.getAttribute('data-timeframe');
+          saveState();
+          renderHome();
+          renderChartAndLegend();
+          if (typeof lucide !== 'undefined' && lucide.createIcons) lucide.createIcons();
+        });
+      });
+
+      // Activity Feed Filters
+      document.querySelectorAll('.feed-filter-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+          state.feedFilter = btn.getAttribute('data-feed-filter');
+          saveState();
+          renderHome();
+          if (typeof lucide !== 'undefined' && lucide.createIcons) lucide.createIcons();
+        });
+      });
+
+      // Weekly Breakdown Accordion Expand/Collapse
+      document.getElementById('weekly-breakdown-list').addEventListener('click', e => {
+        if (e.target.closest('.btn-edit-tx') || e.target.closest('.btn-view-proof')) return;
+        const header = e.target.closest('.btn-toggle-week');
+        if (header) {
+          const key = header.getAttribute('data-week-key');
+          state.expandedWeekKey = state.expandedWeekKey === key ? null : key;
+          saveState();
+          renderWeeklyBreakdown();
+          if (typeof lucide !== 'undefined' && lucide.createIcons) lucide.createIcons();
+        }
+      });
+
+      // Savings Goal Save
+      document.getElementById('btn-save-goal').addEventListener('click', () => {
+        state.savingsGoal = Math.max(0, parseFloat(document.getElementById('input-savings-goal').value) || 0);
+        saveState();
+        renderHome();
+        showToast('Savings Goal Saved', `Target set to ${formatPHP(state.savingsGoal)}`);
+      });
+
+      // Home Quick Expense Add
+      document.getElementById('btn-home-quick-add').addEventListener('click', () => {
+        const inp = document.getElementById('home-quick-input');
+        parseAndAddQuickExpense(inp.value);
+        inp.value = '';
+      });
+
+      document.getElementById('home-quick-input').addEventListener('keydown', e => {
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          document.getElementById('btn-home-quick-add').click();
+        }
+      });
+
+      // Home Receipt File Upload & Drag-Drop
+      const receiptFile = document.getElementById('home-receipt-file');
+      receiptFile.addEventListener('change', e => {
+        const f = e.target.files && e.target.files[0];
+        if (f) {
+          openReceiptModalWithFile(f);
+          e.target.value = '';
+        }
+      });
+
+      const dropzone = document.getElementById('home-dropzone');
+      ['dragenter', 'dragover'].forEach(ev => {
+        dropzone.addEventListener(ev, e => {
+          e.preventDefault();
+          dropzone.classList.add('ring-2', 'ring-blue-500', 'rounded-2xl');
+        });
+      });
+      ['dragleave', 'drop'].forEach(ev => {
+        dropzone.addEventListener(ev, e => {
+          e.preventDefault();
+          dropzone.classList.remove('ring-2', 'ring-blue-500', 'rounded-2xl');
+        });
+      });
+      dropzone.addEventListener('drop', e => {
+        const f = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
+        if (f && f.type.startsWith('image/')) openReceiptModalWithFile(f);
+      });
+
+      document.querySelectorAll('.demo-scan-link').forEach(btn => {
+        btn.addEventListener('click', () => openReceiptModalWithDemo(btn.getAttribute('data-demo-scan')));
+      });
+
+      // All Modals Wiring
+      const budgetModal = document.getElementById('modal-budget');
+      const manualModal = document.getElementById('modal-manual');
+      const editTxModal = document.getElementById('modal-edit-tx');
+      const scanModal = document.getElementById('modal-verify-scan');
+      const viewerModal = document.getElementById('modal-receipt-viewer');
+      const limitsModal = document.getElementById('modal-category-limits');
+      const recurringModal = document.getElementById('modal-recurring');
+      const dataModal = document.getElementById('modal-data');
+
+      document.getElementById('btn-home-add-budget').addEventListener('click', () => budgetModal.classList.remove('hidden'));
+      document.getElementById('btn-close-budget').addEventListener('click', () => budgetModal.classList.add('hidden'));
+      document.getElementById('btn-cancel-budget').addEventListener('click', () => budgetModal.classList.add('hidden'));
+
+      document.getElementById('btn-open-manual-modal').addEventListener('click', () => {
+        document.getElementById('man-date').value = nowLocalISO();
+        manualModal.classList.remove('hidden');
+      });
+      document.getElementById('btn-close-manual').addEventListener('click', () => manualModal.classList.add('hidden'));
+      document.getElementById('btn-cancel-manual').addEventListener('click', () => manualModal.classList.add('hidden'));
+
+      document.getElementById('btn-close-edit-tx').addEventListener('click', () => editTxModal.classList.add('hidden'));
+      document.getElementById('btn-cancel-edit-tx').addEventListener('click', () => editTxModal.classList.add('hidden'));
+
+      document.getElementById('btn-close-verify-scan').addEventListener('click', () => scanModal.classList.add('hidden'));
+      document.getElementById('btn-cancel-verify-scan').addEventListener('click', () => scanModal.classList.add('hidden'));
+
+      document.getElementById('btn-close-viewer').addEventListener('click', () => viewerModal.classList.add('hidden'));
+      document.getElementById('btn-viewer-done').addEventListener('click', () => viewerModal.classList.add('hidden'));
+      document.getElementById('btn-viewer-download').addEventListener('click', e => {
+        const src = e.currentTarget.getAttribute('data-dl-src');
+        const name = e.currentTarget.getAttribute('data-dl-name') || 'receipt.jpg';
+        if (src) {
+          const a = document.createElement('a');
+          a.href = src;
+          a.download = name;
+          document.body.appendChild(a);
+          a.click();
+          document.body.removeChild(a);
+        }
+      });
+
+      document.getElementById('btn-open-limits-modal').addEventListener('click', openCategoryLimitsModal);
+      document.getElementById('btn-close-limits').addEventListener('click', () => limitsModal.classList.add('hidden'));
+      document.getElementById('btn-cancel-limits').addEventListener('click', () => limitsModal.classList.add('hidden'));
+
+      document.getElementById('btn-open-recurring-modal').addEventListener('click', () => {
+        document.getElementById('rec-due').value = todayDateStr(0);
+        recurringModal.classList.remove('hidden');
+      });
+      document.getElementById('btn-close-recurring').addEventListener('click', () => recurringModal.classList.add('hidden'));
+      document.getElementById('btn-cancel-recurring').addEventListener('click', () => recurringModal.classList.add('hidden'));
+
+      document.getElementById('btn-open-data-modal').addEventListener('click', () => {
+        updateDataModalSummary();
+        document.getElementById('confirm-fresh-row').classList.remove('hidden');
+        document.getElementById('confirm-fresh-verify').classList.add('hidden');
+        dataModal.classList.remove('hidden');
+      });
+      document.getElementById('btn-close-data').addEventListener('click', () => dataModal.classList.add('hidden'));
+
+      [budgetModal, manualModal, editTxModal, scanModal, viewerModal, limitsModal, recurringModal, dataModal].forEach(m => {
+        m.addEventListener('click', e => {
+          if (e.target === m) m.classList.add('hidden');
+        });
+      });
+
+      // Save Budget Inflow Form
+      document.getElementById('form-add-budget').addEventListener('submit', e => {
+        e.preventDefault();
+        const amount = parseFloat(document.getElementById('budget-amount').value);
+        if (!Number.isFinite(amount) || amount <= 0) return;
+        const channel = document.getElementById('budget-channel').value;
+        const source = document.getElementById('budget-source').value.trim();
+        const notes = document.getElementById('budget-notes').value.trim() || source;
+
+        state.transactions.unshift({
+          id: 'tx-in-' + Date.now(),
+          type: 'revenue',
+          amount: amount,
+          date: nowLocalISO(),
+          entity: source,
+          category: 'Allowance & Income',
+          proofType: channel,
+          refNo: 'IN-' + Math.floor(1000 + Math.random() * 9000),
+          notes: notes,
+          selectedForLiq: false
+        });
+        state.isDemoData = false;
+        saveState();
+        renderAll();
+        e.target.reset();
+        budgetModal.classList.add('hidden');
+        showToast(`+${formatPHP(amount)} Added`, source);
+      });
+
+      // Manual Modal Type Toggle & Submit
+      const btnManExp = document.getElementById('btn-man-expense');
+      const btnManRev = document.getElementById('btn-man-revenue');
+      const manType = document.getElementById('man-type');
+
+      btnManExp.addEventListener('click', () => {
+        manType.value = 'expense';
+        btnManExp.className = 'py-1.5 rounded-lg text-xs font-bold bg-rose-600 text-white shadow-sm';
+        btnManRev.className = 'py-1.5 rounded-lg text-xs font-bold text-slate-600 dark:text-slate-300';
+      });
+      btnManRev.addEventListener('click', () => {
+        manType.value = 'revenue';
+        btnManRev.className = 'py-1.5 rounded-lg text-xs font-bold bg-emerald-600 text-white shadow-sm';
+        btnManExp.className = 'py-1.5 rounded-lg text-xs font-bold text-slate-600 dark:text-slate-300';
+      });
+
+      document.getElementById('form-manual').addEventListener('submit', e => {
+        e.preventDefault();
+        const type = manType.value;
+        const amount = parseFloat(document.getElementById('man-amount').value);
+        if (!Number.isFinite(amount) || amount <= 0) return;
+        const category = document.getElementById('man-category').value;
+
+        state.transactions.unshift({
+          id: 'tx-man-' + Date.now(),
+          type: type,
+          amount: amount,
+          date: document.getElementById('man-date').value || nowLocalISO(),
+          entity: document.getElementById('man-entity').value.trim(),
+          category: category,
+          proofType: document.getElementById('man-proof').value,
+          refNo: 'REF-' + Math.floor(1000 + Math.random() * 9000),
+          notes: document.getElementById('man-notes').value.trim(),
+          selectedForLiq: type === 'expense'
+        });
+        state.isDemoData = false;
+        saveState();
+        renderAll();
+        e.target.reset();
+        manualModal.classList.add('hidden');
+        showToast(type === 'revenue' ? `+${formatPHP(amount)} Added` : `-${formatPHP(amount)} Logged`);
+        if (type === 'expense') checkCategoryCapAlert(category);
+      });
+
+      // Edit Transaction Modal Wiring
+      document.getElementById('btn-edit-type-expense').addEventListener('click', () => setEditModalType('expense'));
+      document.getElementById('btn-edit-type-revenue').addEventListener('click', () => setEditModalType('revenue'));
+
+      document.getElementById('edit-tx-photo').addEventListener('change', async e => {
+        const f = e.target.files && e.target.files[0];
+        if (!f) return;
+        const raw = await new Promise((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = ev => resolve(ev.target.result);
+          reader.onerror = reject;
+          reader.readAsDataURL(f);
+        });
+        pendingEditImage = await compressReceiptThumbnail(raw, 640, 0.68);
+        document.getElementById('edit-tx-photo-label').textContent = 'Photo Ready ✓';
+        e.target.value = '';
+      });
+
+      document.getElementById('form-edit-tx').addEventListener('submit', e => {
+        e.preventDefault();
+        const id = document.getElementById('edit-tx-id').value;
+        const tx = state.transactions.find(t => t.id === id);
+        if (!tx) return;
+
+        const amount = parseFloat(document.getElementById('edit-tx-amount').value);
+        if (!Number.isFinite(amount) || amount <= 0) return;
+
+        tx.type = document.getElementById('edit-tx-type').value;
+        tx.amount = amount;
+        tx.date = document.getElementById('edit-tx-date').value || tx.date;
+        tx.entity = document.getElementById('edit-tx-entity').value.trim();
+        tx.category = document.getElementById('edit-tx-category').value;
+        tx.proofType = document.getElementById('edit-tx-proof').value;
+        tx.refNo = document.getElementById('edit-tx-ref').value.trim();
+        tx.notes = document.getElementById('edit-tx-notes').value.trim();
+        if (pendingEditImage) {
+          tx.receiptImage = pendingEditImage;
+          delete tx.demoReceiptKey;
+        }
+
+        state.isDemoData = false;
+        saveState();
+        renderAll();
+        editTxModal.classList.add('hidden');
+        showToast('Transaction Updated', `${tx.entity} (${formatPHP(tx.amount)})`);
+      });
+
+      // Save Verified Scanned Receipt (with Compressed Photo Proof)
+      document.getElementById('form-verify-scan').addEventListener('submit', e => {
+        e.preventDefault();
+        const amount = parseFloat(document.getElementById('scan-amount').value);
+        if (!Number.isFinite(amount) || amount <= 0) {
+          showToast('Enter valid total', '', 'rose');
+          return;
+        }
+        const merchant = document.getElementById('scan-merchant').value.trim();
+        const category = document.getElementById('scan-category').value;
+        const demoHtmlEl = document.getElementById('verify-scan-demo-html');
+        const demoKey = !demoHtmlEl.classList.contains('hidden') ? demoHtmlEl.getAttribute('data-demo-key') : null;
+
+        const newTx = {
+          id: 'tx-ocr-' + Date.now(),
+          type: 'expense',
+          amount: amount,
+          date: document.getElementById('scan-date').value || nowLocalISO(),
+          entity: merchant,
+          category: category,
+          proofType: document.getElementById('scan-proof').value,
+          refNo: document.getElementById('scan-ref').value.trim() || 'OR-SCAN',
+          notes: document.getElementById('scan-items').value.trim(),
+          selectedForLiq: true
+        };
+
+        if (pendingScannedImage) {
+          newTx.receiptImage = pendingScannedImage;
+        } else if (demoKey) {
+          newTx.demoReceiptKey = demoKey;
+        }
+
+        state.transactions.unshift(newTx);
+        state.isDemoData = false;
+        saveState();
+        renderAll();
+        scanModal.classList.add('hidden');
+        showToast('Receipt & Proof Saved', `${merchant} (-${formatPHP(amount)})`);
+        checkCategoryCapAlert(category);
+      });
+
+      // Save Category Weekly Limits
+      document.getElementById('form-category-limits').addEventListener('submit', e => {
+        e.preventDefault();
+        const nextLimits = {};
+        document.querySelectorAll('.cap-input').forEach(inp => {
+          const cat = inp.getAttribute('data-cap-cat');
+          const val = parseFloat(inp.value);
+          if (cat && Number.isFinite(val) && val > 0) {
+            nextLimits[cat] = val;
+          }
+        });
+        state.categoryLimits = nextLimits;
+        saveState();
+        renderChartAndLegend();
+        limitsModal.classList.add('hidden');
+        showToast('Category Limits Updated');
+      });
+
+      // Add Recurring Expense
+      document.getElementById('form-add-recurring').addEventListener('submit', e => {
+        e.preventDefault();
+        const title = document.getElementById('rec-title').value.trim();
+        const amount = parseFloat(document.getElementById('rec-amount').value);
+        if (!title || !Number.isFinite(amount) || amount <= 0) return;
+
+        state.recurringItems.push({
+          id: 'rec-' + Date.now(),
+          title,
+          amount,
+          frequency: document.getElementById('rec-frequency').value,
+          category: document.getElementById('rec-category').value,
+          nextDueDate: document.getElementById('rec-due').value || todayDateStr(0)
+        });
+        state.isDemoData = false;
+        saveState();
+        renderRecurringList();
+        if (typeof lucide !== 'undefined' && lucide.createIcons) lucide.createIcons();
+        e.target.reset();
+        recurringModal.classList.add('hidden');
+        showToast('Recurring Reminder Saved', `${title} (${formatPHP(amount)})`);
+      });
+
+      // Global Delegated Clicks (Delete, Edit, View Proof, Recurring Log/Delete)
+      document.body.addEventListener('click', e => {
+        const delBtn = e.target.closest('.btn-delete-tx');
+        if (delBtn) {
+          const id = delBtn.getAttribute('data-delete-id');
+          state.transactions = state.transactions.filter(t => t.id !== id);
+          state.isDemoData = false;
+          saveState();
+          renderAll();
+          showToast('Entry Deleted', '', 'rose');
+          return;
+        }
+
+        const proofBtn = e.target.closest('.btn-view-proof');
+        if (proofBtn) {
+          openReceiptProofViewer(proofBtn.getAttribute('data-view-proof-id'));
+          return;
+        }
+
+        const editBtn = e.target.closest('.btn-edit-tx');
+        if (editBtn) {
+          openEditTransactionModal(editBtn.getAttribute('data-edit-id'));
+          return;
+        }
+
+        const logRecBtn = e.target.closest('.btn-log-recurring');
+        if (logRecBtn) {
+          const recId = logRecBtn.getAttribute('data-log-rec-id');
+          const rec = state.recurringItems.find(r => r.id === recId);
+          if (rec) {
+            state.transactions.unshift({
+              id: 'tx-rec-' + Date.now(),
+              type: 'expense',
+              amount: Number(rec.amount),
+              date: nowLocalISO(),
+              entity: rec.title,
+              category: rec.category,
+              proofType: 'Walang Resibo',
+              refNo: 'RECURRING',
+              notes: `Logged recurring ${rec.frequency} bill`,
+              selectedForLiq: false
+            });
+
+            // Advance next due date
+            const base = rec.nextDueDate ? new Date(rec.nextDueDate + 'T00:00:00') : new Date();
+            if (rec.frequency === 'monthly') {
+              base.setMonth(base.getMonth() + 1);
+            } else {
+              base.setDate(base.getDate() + 7);
+            }
+            const offset = base.getTimezoneOffset() * 60000;
+            rec.nextDueDate = new Date(base - offset).toISOString().slice(0, 10);
+
+            state.isDemoData = false;
+            saveState();
+            renderAll();
+            showToast(`Logged ${rec.title}`, `-${formatPHP(rec.amount)} • Next due ${formatShortDate(rec.nextDueDate)}`);
+            checkCategoryCapAlert(rec.category);
+          }
+          return;
+        }
+
+        const delRecBtn = e.target.closest('.btn-del-recurring');
+        if (delRecBtn) {
+          const recId = delRecBtn.getAttribute('data-del-rec-id');
+          state.recurringItems = state.recurringItems.filter(r => r.id !== recId);
+          saveState();
+          renderRecurringList();
+          if (typeof lucide !== 'undefined' && lucide.createIcons) lucide.createIcons();
+          showToast('Recurring Item Removed', '', 'rose');
+        }
+      });
+
+      // History Tab Controls
+      document.getElementById('btn-hist-timeline').addEventListener('click', () => {
+        state.histView = 'timeline';
+        document.getElementById('btn-hist-timeline').className = 'px-3 py-1.5 rounded-lg font-bold bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-sm transition';
+        document.getElementById('btn-hist-grouped').className = 'px-3 py-1.5 rounded-lg font-semibold text-slate-500 dark:text-slate-400 transition';
+        saveState();
+        renderHistory();
+        if (typeof lucide !== 'undefined' && lucide.createIcons) lucide.createIcons();
+      });
+
+      document.getElementById('btn-hist-grouped').addEventListener('click', () => {
+        state.histView = 'grouped';
+        document.getElementById('btn-hist-grouped').className = 'px-3 py-1.5 rounded-lg font-bold bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-sm transition';
+        document.getElementById('btn-hist-timeline').className = 'px-3 py-1.5 rounded-lg font-semibold text-slate-500 dark:text-slate-400 transition';
+        saveState();
+        renderHistory();
+      });
+
+      ['hist-search', 'hist-type', 'hist-proof'].forEach(id => {
+        document.getElementById(id).addEventListener('input', () => {
+          renderHistory();
+          if (typeof lucide !== 'undefined' && lucide.createIcons) lucide.createIcons();
+        });
+        document.getElementById(id).addEventListener('change', () => {
+          renderHistory();
+          if (typeof lucide !== 'undefined' && lucide.createIcons) lucide.createIcons();
+        });
+      });
+
+      // Liquidation Controls
+      document.getElementById('liq-checklist').addEventListener('change', e => {
+        if (e.target.classList.contains('liq-check')) {
+          const tx = state.transactions.find(t => t.id === e.target.getAttribute('data-liq-id'));
+          if (tx) {
+            tx.selectedForLiq = e.target.checked;
+            saveState();
+            renderLiquidation();
+            if (typeof lucide !== 'undefined' && lucide.createIcons) lucide.createIcons();
+          }
+        }
+      });
+
+      ['liq-sender', 'liq-recipient', 'liq-advance'].forEach(id => {
+        document.getElementById(id).addEventListener('input', () => {
+          renderLiquidation();
+          if (typeof lucide !== 'undefined' && lucide.createIcons) lucide.createIcons();
+        });
+      });
+
+      document.getElementById('btn-liq-work').addEventListener('click', () => {
+        state.transactions.forEach(t => {
+          if (t.type === 'expense') {
+            t.selectedForLiq = ['Work & Classroom Supplies', 'Academic & School Supplies', 'Transportation & Commute'].includes(t.category);
+          }
+        });
+        saveState();
+        renderLiquidation();
+        if (typeof lucide !== 'undefined' && lucide.createIcons) lucide.createIcons();
+      });
+
+      document.getElementById('btn-liq-all').addEventListener('click', () => {
+        state.transactions.forEach(t => { if (t.type === 'expense') t.selectedForLiq = true; });
+        saveState();
+        renderLiquidation();
+        if (typeof lucide !== 'undefined' && lucide.createIcons) lucide.createIcons();
+      });
+
+      document.getElementById('btn-copy-email').addEventListener('click', () => {
+        const text = document.getElementById('liq-email-output').textContent;
+        const ta = document.createElement('textarea');
+        ta.value = text;
+        document.body.appendChild(ta);
+        ta.select();
+        document.execCommand('copy');
+        document.body.removeChild(ta);
+        showToast('Email Copied to Clipboard');
+      });
+
+      document.getElementById('btn-print-voucher').addEventListener('click', () => window.print());
+
+      // Ambagan Controls
+      document.getElementById('ambagan-pick-expense').addEventListener('change', e => {
+        const tx = state.transactions.find(t => t.id === e.target.value);
+        if (tx) {
+          state.ambaganTitle = tx.entity;
+          state.ambaganTotal = Number(tx.amount);
+          saveState();
+          renderAmbagan();
+          if (typeof lucide !== 'undefined' && lucide.createIcons) lucide.createIcons();
+        }
+      });
+
+      document.getElementById('ambagan-title').addEventListener('input', e => {
+        state.ambaganTitle = e.target.value;
+        saveState();
+      });
+
+      document.getElementById('ambagan-total').addEventListener('input', e => {
+        state.ambaganTotal = parseFloat(e.target.value) || 0;
+        saveState();
+        renderAmbagan();
+        if (typeof lucide !== 'undefined' && lucide.createIcons) lucide.createIcons();
+      });
+
+      document.getElementById('btn-ambagan-add').addEventListener('click', () => {
+        const inp = document.getElementById('ambagan-new-name');
+        const name = inp.value.trim();
+        if (!name) return;
+        state.ambaganMembers.push({ id: 'm-' + Date.now(), name, paid: false, credited: false });
+        inp.value = '';
+        saveState();
+        renderAmbagan();
+        if (typeof lucide !== 'undefined' && lucide.createIcons) lucide.createIcons();
+      });
+
+      document.getElementById('ambagan-list').addEventListener('change', e => {
+        if (e.target.classList.contains('ambagan-paid-toggle')) {
+          const m = state.ambaganMembers.find(x => x.id === e.target.getAttribute('data-member-id'));
+          if (m) {
+            m.paid = e.target.checked;
+            saveState();
+            renderAmbagan();
+            if (typeof lucide !== 'undefined' && lucide.createIcons) lucide.createIcons();
+          }
+        }
+      });
+
+      document.getElementById('ambagan-list').addEventListener('click', e => {
+        const creditBtn = e.target.closest('.btn-ambagan-credit');
+        if (creditBtn) {
+          const m = state.ambaganMembers.find(x => x.id === creditBtn.getAttribute('data-credit-id'));
+          if (m && !m.credited) {
+            const share = Number(state.ambaganTotal) / Math.max(1, state.ambaganMembers.length);
+            m.credited = true;
+            state.transactions.unshift({
+              id: 'tx-amb-' + Date.now(),
+              type: 'revenue',
+              amount: Number(share.toFixed(2)),
+              date: nowLocalISO(),
+              entity: `${m.name} (Ambagan)`,
+              category: 'Allowance & Income',
+              proofType: 'GCash Wallet',
+              refNo: 'AMB-' + Math.floor(1000 + Math.random() * 9000),
+              notes: `Share for ${state.ambaganTitle}`,
+              selectedForLiq: false
+            });
+            state.isDemoData = false;
+            saveState();
+            renderAll();
+            showToast(`+${formatPHP(share)} Added to Budget`, `${m.name}'s share`);
+          }
+        }
+        const remBtn = e.target.closest('.btn-ambagan-remove');
+        if (remBtn) {
+          const id = remBtn.getAttribute('data-remove-id');
+          state.ambaganMembers = state.ambaganMembers.filter(x => x.id !== id);
+          saveState();
+          renderAmbagan();
+          if (typeof lucide !== 'undefined' && lucide.createIcons) lucide.createIcons();
+        }
+      });
+
+      document.getElementById('btn-ambagan-copy').addEventListener('click', () => {
+        const share = Number(state.ambaganTotal) / Math.max(1, state.ambaganMembers.length);
+        const unpaid = state.ambaganMembers.filter(m => !m.paid).map(m => m.name).join(', ') || 'Everyone paid!';
+        const msg = `Ambagan for "${state.ambaganTitle}" (Total: ${formatPHP(state.ambaganTotal)}):\n• Share: ${formatPHP(share)} each\n• Pending: ${unpaid}`;
+        const ta = document.createElement('textarea');
+        ta.value = msg;
+        document.body.appendChild(ta);
+        ta.select();
+        document.execCommand('copy');
+        document.body.removeChild(ta);
+        showToast('Ambagan Reminder Copied');
+      });
+
+      // Data Backup, Export CSV/JSON, Restore & Start Fresh
+      document.getElementById('btn-trigger-start-fresh').addEventListener('click', () => {
+        document.getElementById('confirm-fresh-row').classList.add('hidden');
+        document.getElementById('confirm-fresh-verify').classList.remove('hidden');
+      });
+
+      document.getElementById('btn-cancel-start-fresh').addEventListener('click', () => {
+        document.getElementById('confirm-fresh-verify').classList.add('hidden');
+        document.getElementById('confirm-fresh-row').classList.remove('hidden');
+      });
+
+      document.getElementById('btn-confirm-start-fresh').addEventListener('click', () => {
+        state.transactions = [];
+        state.recurringItems = [];
+        state.ambaganMembers = [{ id: 'm1', name: 'You', paid: true, credited: false }];
+        state.ambaganTitle = 'Shared Expense';
+        state.ambaganTotal = 0;
+        state.savingsGoal = 0;
+        state.categoryLimits = {};
+        state.isDemoData = false;
+        state.bannerDismissed = true;
+        saveState();
+        renderAll();
+        dataModal.classList.add('hidden');
+        showToast('Started Fresh at ₱0.00', 'All sample entries cleared and saved.');
+      });
+
+      document.getElementById('btn-load-sample-data').addEventListener('click', () => {
+        state.transactions = buildSampleTransactions();
+        state.recurringItems = buildSampleRecurring();
+        state.ambaganMembers = JSON.parse(JSON.stringify(SAMPLE_AMBAGAN));
+        state.ambaganTitle = 'Thesis Printing';
+        state.ambaganTotal = 600.00;
+        state.savingsGoal = 500.00;
+        state.categoryLimits = {
+          'Food & Dining': 600,
+          'Transportation & Commute': 300,
+          'Work & Classroom Supplies': 800
+        };
+        state.isDemoData = true;
+        state.bannerDismissed = false;
+        saveState();
+        renderAll();
+        dataModal.classList.add('hidden');
+        showToast('Multi-Week Sample Loaded', '', 'blue');
+      });
+
+      function downloadFile(content, fileName, mimeType) {
+        const blob = new Blob([content], { type: mimeType });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = fileName;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+      }
+
+      document.getElementById('btn-export-json').addEventListener('click', () => {
+        const dateTag = new Date().toISOString().slice(0, 10);
+        downloadFile(JSON.stringify(state, null, 2), `resiboss-backup-${dateTag}.json`, 'application/json');
+        showToast('Backup Downloaded (.JSON)', 'Keep this file safe to restore anytime.');
+      });
+
+      function exportTransactionsCSV() {
+        const headers = ['Date', 'Type', 'Merchant_or_Source', 'Category', 'Proof_Type', 'Reference_No', 'Amount_PHP', 'Notes'];
+        const rows = state.transactions.map(t => [
+          t.date,
+          t.type === 'revenue' ? 'Budget Inflow' : 'Expense',
+          `"${String(t.entity || '').replace(/"/g, '""')}"`,
+          `"${String(t.category || '').replace(/"/g, '""')}"`,
+          `"${String(t.proofType || '').replace(/"/g, '""')}"`,
+          `"${String(t.refNo || '').replace(/"/g, '""')}"`,
+          Number(t.amount || 0).toFixed(2),
+          `"${String(t.notes || '').replace(/"/g, '""')}"`
+        ].join(','));
+        const csvContent = [headers.join(','), ...rows].join('\n');
+        const dateTag = new Date().toISOString().slice(0, 10);
+        downloadFile(csvContent, `resiboss-ledger-${dateTag}.csv`, 'text/csv;charset=utf-8;');
+        showToast('Spreadsheet Exported (.CSV)');
+      }
+
+      document.getElementById('btn-export-csv').addEventListener('click', exportTransactionsCSV);
+      document.getElementById('btn-hist-export-csv').addEventListener('click', exportTransactionsCSV);
+
+      document.getElementById('input-import-json').addEventListener('change', e => {
+        const file = e.target.files && e.target.files[0];
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = evt => {
+          try {
+            const imported = JSON.parse(evt.target.result);
+            if (!imported || !Array.isArray(imported.transactions)) {
+              throw new Error('Invalid backup format');
+            }
+            state.transactions = imported.transactions;
+            state.recurringItems = Array.isArray(imported.recurringItems) ? imported.recurringItems : state.recurringItems;
+            state.categoryLimits = (imported.categoryLimits && typeof imported.categoryLimits === 'object') ? imported.categoryLimits : state.categoryLimits;
+            state.ambaganMembers = Array.isArray(imported.ambaganMembers) ? imported.ambaganMembers : state.ambaganMembers;
+            state.ambaganTitle = imported.ambaganTitle || state.ambaganTitle;
+            state.ambaganTotal = Number(imported.ambaganTotal) || state.ambaganTotal;
+            state.savingsGoal = imported.savingsGoal !== undefined ? Number(imported.savingsGoal) : state.savingsGoal;
+            state.isDemoData = false;
+            state.bannerDismissed = true;
+            saveState();
+            renderAll();
+            dataModal.classList.add('hidden');
+            showToast('Backup Restored!', `${state.transactions.length} transactions loaded.`);
+          } catch (err) {
+            showToast('Invalid Backup File', 'Please select a valid resiBoss .json file.', 'rose');
+          }
+        };
+        reader.readAsText(file);
+        e.target.value = '';
+      });
+    });
+  </script>
+</body>
+</html>
